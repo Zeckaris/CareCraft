@@ -24,8 +24,12 @@ export const verifyToken= (token: string):any =>{
 }
 
 
-export const stripPassword = (user: IUserAccount | any): any => {
-    const userWithoutPassword = {...user}
-    delete userWithoutPassword.password
-    return userWithoutPassword
+export const prepareUserData = (user: IUserAccount | any): any => {
+    const cleanedUser = {...user}
+    delete cleanedUser.password
+    delete cleanedUser.firstName
+    delete cleanedUser.lastName
+    delete cleanedUser.lastLogin
+    delete cleanedUser.phoneNumber
+    return cleanedUser
 }

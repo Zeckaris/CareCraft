@@ -10,5 +10,4 @@ export interface IUserAccount extends Document {
   phoneNumber?: string
   createdAt: Date
   lastLogin?: Date
-  isActive: boolean
 }
