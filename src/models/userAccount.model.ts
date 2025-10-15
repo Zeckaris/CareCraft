@@ -13,7 +13,6 @@ const userAccountSchema = new Schema<IUserAccount>({
   },
   phoneNumber: { type: String },
   lastLogin: { type: Date },
-  isActive: { type: Boolean, default: true }
 },
 {
     timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" },
