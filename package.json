@@ -10,9 +10,11 @@
   "author": "amanuel fisseha",
   "license": "ISC",
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "datejs": "^1.0.0-rc3",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.19.1"
   },
   "devDependencies": {
