@@ -5,7 +5,7 @@ const inviteTokenSchema = new Schema<IInviteToken>(
   {
     token: { type: String, required: true, unique: true },
     role: { type: String, enum: ['Teacher', 'Parent'], required: true },
-    createdFor: { type: Schema.Types.ObjectId, ref: 'UserAccount', default: null },
+    createdFor: { type: Schema.Types.ObjectId, ref: 'Student', default: null }, 
     expiresAt: { type: Date, required: true },
     isUsed: { type: Boolean, default: false }
   },
