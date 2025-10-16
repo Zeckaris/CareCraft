@@ -8,6 +8,7 @@ import { connectDB } from './config/database'
 
 //Api router files
 import authRoutes from './routes/auth.route'
+import schoolInfoRoutes from "./routes/schoolInfo.route";
 
 
 const app= express()
@@ -20,6 +21,7 @@ app.use(cors({
 }))
 
 app.use('/api/auth', authRoutes)
+app.use("/api/general", schoolInfoRoutes);
 
 
 connectDB().then(() => {
