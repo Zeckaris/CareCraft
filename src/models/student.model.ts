@@ -8,8 +8,8 @@ const studentSchema = new Schema<IStudent>(
     lastName: { type: String, required: true, trim: true },
     gender: { type: String, required: true, trim: true },
     dateOfBirth: { type: Date, required: true },
-    enrollmentId: { type: Schema.Types.ObjectId, ref: 'StudentEnrollment', required: true },
-    parentId: { type: Schema.Types.ObjectId, ref: 'UserAccount', required: true },
+    enrollmentId: { type: Schema.Types.ObjectId, ref: 'StudentEnrollment', required: false },
+    parentId: { type: Schema.Types.ObjectId, ref: 'UserAccount', required: false },
     admissionDate: { type: Date, required: true },
     profileImage: { type: String, default: '' }
   },
