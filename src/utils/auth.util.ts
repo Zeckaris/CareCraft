@@ -24,12 +24,7 @@ export const verifyToken= (token: string):any =>{
 }
 
 
-export const prepareUserData = (user: IUserAccount | any): any => {
-    const cleanedUser = {...user}
-    delete cleanedUser.password
-    delete cleanedUser.firstName
-    delete cleanedUser.lastName
-    delete cleanedUser.lastLogin
-    delete cleanedUser.phoneNumber
-    return cleanedUser
+export const prepareUserData = (user: any) => {
+  const { _id, email, role } = user.toObject ? user.toObject() : user
+  return { _id, email, role }
 }

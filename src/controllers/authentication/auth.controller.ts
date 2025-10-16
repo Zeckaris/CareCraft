@@ -15,7 +15,7 @@ export const signupUser= async (req:Request, res:Response):Promise<void> =>{
         res.status(400).json({message : "Missing fields"})
         return
     }
-
+    
     try{
         const user = await UserAccount.findOne({email})
         if(user){
@@ -31,8 +31,8 @@ export const signupUser= async (req:Request, res:Response):Promise<void> =>{
             role,
             phoneNumber
         })
-
         await newUser.save()
+        console.log('signup activated')
         res.status(201).json({message: "User created successfully"})
     }catch (error){
         res.status(500).json({message: "Internal server error"})
@@ -65,7 +65,7 @@ export const loginUser= async(req: Request, res: Response): Promise<void> =>{
         user.lastLogin= lastLogin
         await user.save()
         const response= prepareUserData(user)
-
+        
         res.status(200).json({message: "Login successful", token, response})
     }catch (error){
         res.status(500).json({message: "Internal server error"})
