@@ -9,7 +9,7 @@ const studentSchema = new Schema<IStudent>(
     gender: { type: String, required: true, trim: true },
     dateOfBirth: { type: Date, required: true },
     enrollmentId: { type: Schema.Types.ObjectId, ref: 'StudentEnrollment', required: false },
-    parentId: { type: Schema.Types.ObjectId, ref: 'UserAccount', required: false },
+    parentId: { type: Schema.Types.ObjectId, ref: 'UserAccount', required: false, default: null },
     admissionDate: { type: Date, required: true },
     profileImage: { type: String, default: '' }
   },

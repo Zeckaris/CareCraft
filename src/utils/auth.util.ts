@@ -11,8 +11,8 @@ export const generateToken = (user: IUserAccount) =>{
         email: user.email,
         role: user.role
     }
-    
     const token= jwt.sign(payload, secretKey, {expiresIn: tokenExpirationTime})
+    return token
 }
 
 export const verifyToken= (token: string):any =>{

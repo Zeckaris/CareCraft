@@ -1,0 +1,4 @@
+-currently the parent association with the student is not working when the parent signs up
+- also the invitation token is not getting set to used true and this is allowing multiple usage of the invitation token
+- the response message that gets sent when the invitation token creation is succcessful needs rework
+-token for login also has problem because it is expiring before the time it is set

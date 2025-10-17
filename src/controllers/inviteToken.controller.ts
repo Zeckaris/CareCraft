@@ -20,26 +20,26 @@ export const createInviteToken = async (req: Request, res: Response) => {
     }
 
     const { role, studentId } = req.body;
-    const expiresAt= 180000
+    const expiresInMs = 180000;
 
-    if (!role  || (role === 'Parent' && !studentId)) {
+    if (!role  || (role === 'parent' && !studentId)) {
         res.status(400).json({ message: 'Missing required fields.' });
         return;
     }
 
     try {
-        const payload: any = { role };
-        if (role === 'Parent') payload.studentId = studentId;
+        const payload: any = { role: role.toLowerCase() };
+        if (role === 'parent') payload.studentId = studentId;
 
         const token = jwt.sign(payload, JWT_SECRET, {
-            expiresIn: Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000),
+            expiresIn: expiresInMs / 1000,
         });
 
         const newToken = new InviteToken({
             token,
             role,
-            createdFor: role === 'Parent' ? studentId : null,
-            expiresAt: new Date(expiresAt),
+            createdFor: role === 'parent' ? studentId : null,
+            expiresAt: new Date(Date.now() + expiresInMs),
         });
 
         await newToken.save();
