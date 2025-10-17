@@ -5,6 +5,8 @@ import { InviteToken } from '../../models/inviteToken.model';
 import bcrypt from 'bcrypt'
 import { generateToken, prepareUserData } from '../../utils/auth.util';
 import mongoose from 'mongoose';
+import { validateEmail, sendInviteEmail, validateVerificationCode, verificationCodes, transporter } from '../../utils/emailVerification.util'
+import crypto from 'crypto';
 
 
 interface SignupRequestBody {
@@ -15,9 +17,46 @@ interface SignupRequestBody {
   role: string;
   phoneNumber: string;
   inviteToken?: string;
+  verificationCode: string;
 }
+
+
+
+export const sendVerification = async (req: Request, res: Response) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ message: 'Email required.' });
+
+  // Direct validation (no utility call)
+  if (!validateEmail(email)) {
+    return res.status(400).json({ message: 'Invalid email format.' });
+  }
+
+  const code = crypto.randomBytes(3).toString('hex').toUpperCase();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  verificationCodes.set(email, { code, expiresAt });
+
+  try {
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'CareCraft Email Verification',
+      html: `
+        <h2>Verify Your Email</h2>
+        <p>Your verification code is: <strong>${code}</strong></p>
+        <p><strong>Expires in 10 minutes</strong></p>
+        <p>Enter this code on the signup page to continue.</p>
+      `,
+    });
+    res.status(200).json({ message: 'Verification code sent! Check your inbox.' });
+  } catch (error) {
+    verificationCodes.delete(email);
+    res.status(500).json({ message: 'Failed to send verification email.' });
+  }
+};
+
+
 export const signupUser = async (req: Request, res: Response): Promise<void> => {
-  const { firstName, lastName, email, password, role, phoneNumber, inviteToken } =
+  const { firstName, lastName, email, password, role, phoneNumber, inviteToken, verificationCode} =
     req.body as SignupRequestBody;
 
   if (!firstName || !lastName || !email || !password || !role || !phoneNumber) {
@@ -29,6 +68,11 @@ export const signupUser = async (req: Request, res: Response): Promise<void> => 
     const existingUser = await UserAccount.findOne({ email });
     if (existingUser) {
       res.status(400).json({ message: 'User already exists.' });
+      return;
+    }
+    const codeValidation = validateVerificationCode(email, verificationCode);
+    if (!codeValidation.success) {
+      res.status(400).json({ message: codeValidation.message });
       return;
     }
 

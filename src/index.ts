@@ -11,6 +11,7 @@ import authRoutes from './routes/auth.route';
 import schoolInfoRoutes from './routes/schoolInfo.route';
 import inviteTokenRouter from './routes/inviteToken.route';
 import studentRouter from './routes/student.route';
+import { startVerificationCleanup } from './utils/emailVerification.util';
 
 
 const app= express()
@@ -32,4 +33,5 @@ connectDB().then(() => {
 app.listen(process.env.PORT, () => console.log(`Server running on port ${process.env.PORT}`))
 })
 
+startVerificationCleanup();
 
