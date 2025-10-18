@@ -9,7 +9,7 @@ export const createGrade= async (req:Request, res:Response):Promise<void> =>{
         res.status(400).json({message : "Missing required field"})
     }
     try{
-        const grade= await Grade.find({level: level})
+        const grade= await Grade.findOne({level: level})
         if (grade){
             res.status(400).json({message : "Grade already exists"})
             return
