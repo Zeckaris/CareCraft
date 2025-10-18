@@ -5,6 +5,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "seed-types": "ts-node src/scripts/seedDemoTypes.ts",
+    "seed-setups": "ts-node src/scripts/seedDemoSetups.ts",
+    "seed": "npm run seed-types && npm run seed-setups",
     "dev": "nodemon src/index.ts"
   },
   "author": "amanuel fisseha",
