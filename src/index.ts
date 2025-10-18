@@ -14,6 +14,7 @@ import studentRouter from './routes/student.route';
 import { startVerificationCleanup } from './utils/emailVerification.util';
 import gradeRouter from './routes/grade.route';
 import subjectRouter from './routes/admin/subject.route'
+import assessmentTypeRoutes from './routes/assessment/assessmentType.route'
 
 const app= express()
 
@@ -30,6 +31,7 @@ app.use('/api/adminstrator', inviteTokenRouter);
 app.use('/api/student', studentRouter);
 app.use('/api/grade', gradeRouter);
 app.use('/api/subject', subjectRouter);
+app.use('/api/assessment/type', assessmentTypeRoutes);
 
 
 connectDB().then(() => {
