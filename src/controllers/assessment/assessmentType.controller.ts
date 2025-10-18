@@ -1,5 +1,7 @@
 import { Request, Response } from "express"
 import { AssessmentType } from "../../models/assessment/assessmentType.model"
+import { GradeSubjectAssessment } from "../../models/gradeSubjectAssessment.model"
+import { AssessmentSetup } from "../../models/assessment/assessmentSetup.model"
 
 export const createAssessmentType = async (req: Request, res: Response): Promise<void> => {
     const { name, weight, description } = req.body
@@ -100,21 +102,43 @@ export const updateAssessmentType = async (req: Request, res: Response): Promise
     }
 }
 
+
 export const deleteAssessmentType = async (req: Request, res: Response): Promise<void> => {
-    const { id } = req.params
-    if (!id) {
-        res.status(400).json({ message: "Missing required field: id" })
-        return
+  const { id } = req.params
+  if (!id) {
+    res.status(400).json({ message: "Missing required field: id" })
+    return
+  }
+
+  try {
+    // Correct field name for AssessmentSetup
+    const usedInSetup = await AssessmentSetup.findOne({ assessmentTypeIds: id })
+    const usedInGSA = await GradeSubjectAssessment.findOne({ conductedStages: id })
+
+    if (usedInSetup || usedInGSA) {
+      const usedPlaces: string[] = []
+      if (usedInSetup) usedPlaces.push("Assessment Setup")
+      if (usedInGSA) usedPlaces.push("Grade Subject Assessment")
+
+      res.status(400).json({
+        message: `Cannot delete assessment type because it is referenced in: ${usedPlaces.join(", ")}.`,
+        action: "Please delete or update the referenced setup(s) before removing this assessment type.",
+        references: {
+          setupId: usedInSetup?._id || null,
+          gradeSubjectAssessmentId: usedInGSA?._id || null,
+        },
+      })
+      return
     }
 
-    try {
-        const type = await AssessmentType.findByIdAndDelete(id)
-        if (!type) {
-            res.status(404).json({ message: "Assessment type not found" })
-            return
-        }
-        res.status(200).json({ message: "Assessment type deleted successfully" })
-    } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+    const deletedType = await AssessmentType.findByIdAndDelete(id)
+    if (!deletedType) {
+      res.status(404).json({ message: "Assessment type not found" })
+      return
     }
+
+    res.status(200).json({ message: "Assessment type deleted successfully" })
+  } catch (error) {
+    res.status(500).json({ message: "Internal server error", error })
+  }
 }

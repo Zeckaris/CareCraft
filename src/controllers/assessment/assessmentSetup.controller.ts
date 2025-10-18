@@ -1,6 +1,8 @@
 import { Request, Response } from "express"
 import { AssessmentSetup } from "../../models/assessment/assessmentSetup.model"
 import { AssessmentType } from "../../models/assessment/assessmentType.model"
+import { AssessmentScore } from "../../models/assessment/assessmentScore.model"
+import { GradeSubjectAssessment } from "../../models/gradeSubjectAssessment.model"
 
 export const createAssessmentSetup = async (req: Request, res: Response): Promise<void> => {
     const { name, description, assessmentTypeIds } = req.body
@@ -152,20 +154,40 @@ export const updateAssessmentSetup = async (req: Request, res: Response): Promis
 }
 
 export const deleteAssessmentSetup = async (req: Request, res: Response): Promise<void> => {
-    const { id } = req.params
-    if (!id) {
-        res.status(400).json({ message: "Missing required field: id" })
-        return
+  const { id } = req.params;
+  if (!id) {
+    res.status(400).json({ message: "Missing required field: id" });
+    return;
+  }
+
+  try {
+    const usedInScore = await AssessmentScore.findOne({ assessmentSetupId: id });
+    const usedInGSA = await GradeSubjectAssessment.findOne({ assessmentSetupId: id });
+
+    if (usedInScore || usedInGSA) {
+      const usedPlaces: string[] = [];
+      if (usedInScore) usedPlaces.push("Assessment Scores");
+      if (usedInGSA) usedPlaces.push("Grade Subject Assessment");
+
+      res.status(400).json({
+        message: `Cannot delete assessment setup because it is referenced in: ${usedPlaces.join(", ")}.`,
+        action: "Please delete or update the referenced records before removing this assessment setup.",
+        references: {
+          assessmentScoreId: usedInScore?._id || null,
+          gradeSubjectAssessmentId: usedInGSA?._id || null,
+        },
+      });
+      return;
     }
 
-    try {
-        const setup = await AssessmentSetup.findByIdAndDelete(id)
-        if (!setup) {
-            res.status(404).json({ message: "Assessment setup not found" })
-            return
-        }
-        res.status(200).json({ message: "Assessment setup deleted successfully" })
-    } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+    const deletedSetup = await AssessmentSetup.findByIdAndDelete(id);
+    if (!deletedSetup) {
+      res.status(404).json({ message: "Assessment setup not found" });
+      return;
     }
-}
+
+    res.status(200).json({ message: "Assessment setup deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Internal server error", error });
+  }
+};
