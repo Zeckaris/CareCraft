@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import { InviteToken } from '../models/inviteToken.model';
+import { InviteToken } from '../../models/inviteToken.model';
 import jwt from 'jsonwebtoken';
-import { createInviteTokenMiddleware } from '../middlewares/createInviteToken.middleware'
-import { sendInviteEmail, validateEmail } from '../utils/emailVerification.util';
+import { createInviteTokenMiddleware } from '../../middlewares/createInviteToken.middleware'
+import { sendInviteEmail, validateEmail } from '../../utils/emailVerification.util';
 
 const JWT_SECRET = process.env.JWT_SECRET_KEY || 'defaultsecret';
 

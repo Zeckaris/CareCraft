@@ -7,12 +7,13 @@ import cors from 'cors';
 import { connectDB } from './config/database';
 
 //Api router files
-import authRoutes from './routes/auth.route';
-import schoolInfoRoutes from './routes/schoolInfo.route';
-import inviteTokenRouter from './routes/inviteToken.route';
+import authRouter from './routes/auth.route';
+import schoolInfoRouter from './routes/admin/schoolInfo.route';
+import inviteTokenRouter from './routes/admin/inviteToken.route';
 import studentRouter from './routes/student.route';
 import { startVerificationCleanup } from './utils/emailVerification.util';
-
+import gradeRouter from './routes/grade.route';
+import subjectRouter from './routes/admin/subject.route'
 
 const app= express()
 
@@ -23,10 +24,12 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use('/api/auth', authRoutes);
-app.use("/api/general", schoolInfoRoutes);
+app.use('/api/auth', authRouter);
+app.use("/api/general", schoolInfoRouter);
 app.use('/api/adminstrator', inviteTokenRouter);
 app.use('/api/student', studentRouter);
+app.use('/api/grade', gradeRouter);
+app.use('/api/subject', subjectRouter);
 
 
 connectDB().then(() => {

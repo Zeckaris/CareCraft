@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import { Student } from '../models/student.model'
+import { Student } from '../../models/student.model'
 import mongoose from 'mongoose'
 
 

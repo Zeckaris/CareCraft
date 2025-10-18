@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { getInviteTokens, deleteInviteToken } from '../controllers/inviteToken.controller';
-import { authMiddleware } from '../middlewares/auth.middleware';
-import { createInviteTokenMiddleware } from '../middlewares/createInviteToken.middleware'
-import { sendInvite } from '../controllers/inviteToken.controller'
+import { getInviteTokens, deleteInviteToken } from '../../controllers/admin/inviteToken.controller';
+import { authMiddleware } from '../../middlewares/auth.middleware';
+import { createInviteTokenMiddleware } from '../../middlewares/createInviteToken.middleware'
+import { sendInvite } from '../../controllers/admin/inviteToken.controller'
 
 const router = Router();
 

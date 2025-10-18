@@ -5,7 +5,7 @@ import {
   getStudentById,
   updateStudent,
   deleteStudent,
-} from '../controllers/student.controller'
+} from '../controllers/admin/student.controller'
 import { authMiddleware } from '../middlewares/auth.middleware'
 import { roleMiddleware } from '../middlewares/role.middleware'
 

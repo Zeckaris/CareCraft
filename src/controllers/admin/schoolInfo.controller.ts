@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { SchoolInfo } from "../models/schoolInfo.model";
+import { SchoolInfo } from "../../models/schoolInfo.model";
 
 
 export const createSchoolInfo = async (req: Request, res: Response): Promise<void> => {

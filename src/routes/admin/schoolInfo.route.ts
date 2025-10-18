@@ -4,7 +4,7 @@ import {
   getSchoolInfo,
   updateSchoolInfo,
   deleteSchoolInfo,
-} from "../controllers/schoolInfo.controller";
+} from "../../controllers/admin/schoolInfo.controller";
 
 const router = express.Router();
 
