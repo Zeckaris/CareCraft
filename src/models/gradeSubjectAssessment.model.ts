@@ -1,11 +1,15 @@
 import { Schema, model, Types } from 'mongoose'
-import { IGradeSubjectAssessment } from '../types/gradeSubjectAssessment.type'
+import { IGradeSubjectAssessment } from '../types/gradeSubjectAssessment.type';
 
 const gradeSubjectAssessmentSchema = new Schema<IGradeSubjectAssessment>(
   {
     gradeId: { type: Schema.Types.ObjectId, ref: 'Grade', required: true },
     subjectId: { type: Schema.Types.ObjectId, ref: 'Subject', required: true },
-    assessmentSetupId: { type: Schema.Types.ObjectId, ref: 'AssessmentSetup', required: true }
+    assessmentSetupId: { type: Schema.Types.ObjectId, ref: 'AssessmentSetup', required: true },
+    conductedStages: [{  
+    type: Schema.Types.ObjectId, 
+    ref: 'AssessmentType'
+    }]
   },
   {
     timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' }
@@ -13,6 +17,6 @@ const gradeSubjectAssessmentSchema = new Schema<IGradeSubjectAssessment>(
 )
 
 export const GradeSubjectAssessment = model<IGradeSubjectAssessment>(
-  'GradeSubjectAssessment',
+  'GradeSubjectAssessment', 
   gradeSubjectAssessmentSchema
 )
