@@ -26,7 +26,6 @@ export const sendVerification = async (req: Request, res: Response) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ message: 'Email required.' });
 
-  // Direct validation (no utility call)
   if (!validateEmail(email)) {
     return res.status(400).json({ message: 'Invalid email format.' });
   }
@@ -188,3 +187,4 @@ export const getCurrentUser= async (req:Request, res: Response):Promise<void> =>
     }
     
 }
+

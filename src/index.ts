@@ -17,6 +17,7 @@ import subjectRouter from './routes/admin/subject.route';
 import assessmentTypeRoutes from './routes/assessment/assessmentType.route';
 import assessmentSetupRoutes from './routes/assessment/assessmentSetup.route';
 import assessmentScoreRoutes from './routes/assessment/assessmentScore.routes'
+import gradeSubjectAssessmentRoutes from './routes/admin/gradeSubjectAssessment.route';
 
 const app= express()
 
@@ -35,7 +36,9 @@ app.use('/api/grade', gradeRouter);
 app.use('/api/subject', subjectRouter);
 app.use('/api/assessment/type', assessmentTypeRoutes);
 app.use('/api/assessment/setup', assessmentSetupRoutes);
-app.use('/api/assessment/scores', assessmentScoreRoutes)
+app.use('/api/assessment/scores', assessmentScoreRoutes);
+app.use('/api/assessment/gsa', gradeSubjectAssessmentRoutes);
+
 
 
 connectDB().then(() => {
