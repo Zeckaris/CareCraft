@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { Student } from '../../models/student.model'
 import mongoose from 'mongoose'
+import { StudentEnrollment } from '../../models/studentEnrollment.model'
 
 
 
@@ -112,4 +113,38 @@ export const deleteStudent = async (req: Request, res: Response): Promise<void> 
   } catch (error) {
     res.status(500).json({ message: 'Error deleting student.', error })
   }
+}
+
+
+export const getStudentsByGrade = async (req: Request, res: Response): Promise<void> => {
+    const { gradeId } = req.params
+    
+    if (!gradeId) {
+        res.status(400).json({ message: "Missing: gradeId" })
+        return
+    }
+
+    try {
+        const enrollments = await StudentEnrollment.find({ 
+            gradeId, 
+            isActive: true 
+        }).populate('studentId') 
+
+        if (enrollments.length === 0) {
+            res.status(400).json({ message: "No active students found" })
+            return
+        }
+
+        const students = enrollments.map(en => ({
+            id: en.studentId?._id || en.studentId,
+            name: `${(en.studentId as any)?.firstName || ''} ${(en.studentId as any)?.lastName || ''}`.trim()
+        }))
+
+        res.status(200).json({ 
+            students, 
+            count: students.length 
+        })
+    } catch (error) {
+        res.status(500).json({ message: "Internal server error", error })
+    }
 }

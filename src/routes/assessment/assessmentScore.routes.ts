@@ -7,7 +7,8 @@ import {
   updateAssessmentScore,
   getAllAssessmentScores,
   getAssessmentScoreById,
-  deleteAssessmentScore
+  deleteAssessmentScore,
+  batchUpdateScoresForType
 } from '../../controllers/assessment/assessmentScore.controller'
 import { authMiddleware } from '../../middlewares/auth.middleware'
 import { roleMiddleware } from '../../middlewares/role.middleware'
@@ -25,11 +26,12 @@ router.get('/:id', authMiddleware, getAssessmentScoreById)
 
 // UPDATE (Teacher only)
 router.put('/:id', authMiddleware, roleMiddleware('teacher'), updateAssessmentScore)
+router.patch('/batch-type', authMiddleware, roleMiddleware('teacher'), batchUpdateScoresForType)
 
 // DELETE (Teacher only)
 router.delete('/:id', authMiddleware, roleMiddleware('teacher'), deleteAssessmentScore)
 
-// CONDUCT STAGE (Teacher only) - Note: /grade-subject-assessments/:id/conduct
+// CONDUCT STAGE (Teacher only) 
 router.post('/grade-subject-assessments/:id/conduct', authMiddleware, roleMiddleware('teacher'), markStageConducted)
 
 export default router

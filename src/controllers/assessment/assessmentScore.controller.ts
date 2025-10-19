@@ -4,6 +4,7 @@ import { GradeSubjectAssessment } from "../../models/gradeSubjectAssessment.mode
 import { StudentEnrollment } from "../../models/studentEnrollment.model"
 import { AssessmentSetup } from "../../models/assessment/assessmentSetup.model"
 import { recalcResult,validateConducted } from "../../utils/assessment.utility"
+import { AssessmentType } from "../../models/assessment/assessmentType.model"
 
 // BULK GENERATION (Grade + Subject → Auto Setup from GSA)
 export const generateBulkScores = async (req: Request, res: Response): Promise<void> => {
@@ -356,5 +357,85 @@ export const deleteAssessmentScore = async (req: Request, res: Response): Promis
         res.status(200).json({ message: "Marksheet deleted" })
     } catch (error) {
         res.status(500).json({ message: "Internal server error", error })
+    }
+}
+
+
+// Batch update ONE type for ALL students 
+export const batchUpdateScoresForType = async (req: Request, res: Response): Promise<void> => {
+    const { gsaId, assessmentTypeId, scores } = req.body
+    
+    if (!gsaId || !assessmentTypeId || !scores || !Array.isArray(scores)) {
+        res.status(400).json({ message: "Missing: gsaId, assessmentTypeId, scores array" })
+        return
+    }
+
+    try {
+        const gsa = await GradeSubjectAssessment.findById(gsaId)
+        if (!gsa) {
+            res.status(404).json({ message: "Class assessment not found" })
+            return
+        }
+
+        const assessmentType = await AssessmentType.findById(assessmentTypeId)
+        if (!assessmentType) {
+            res.status(404).json({ message: "Assessment type not found" })
+            return
+        }
+        const typeName = assessmentType.name
+        validateConducted(gsa, assessmentTypeId, typeName) 
+
+        let updated = 0, errors: any[] = []
+        const validScores = scores.filter(s => s.studentId && typeof s.score === 'number')
+
+        for (const { studentId, score } of validScores) {
+            try {
+                let scoreDoc = await AssessmentScore.findOne({ studentId, gsaId })
+                
+                if (!scoreDoc) {
+                   const setup = await AssessmentSetup.findById(gsa.assessmentSetupId)
+                    const scoresTemplate = setup!.assessmentTypeIds.map((typeId: any) => ({
+                        assessmentTypeId: typeId,
+                        typeName: assessmentType.name,  
+                        score: 0
+                    }))
+                    
+                    scoreDoc = new AssessmentScore({
+                        studentId,
+                        gsaId,
+                        assessmentSetupId: gsa.assessmentSetupId,
+                        scores: scoresTemplate,
+                        result: 0
+                    })
+                } else {
+                    const setup = await AssessmentSetup.findById(gsa.assessmentSetupId)
+                    await recalcResult(scoreDoc, gsa, setup)
+                }
+
+                const scoreIndex = scoreDoc.scores.findIndex(s => s.assessmentTypeId.equals(assessmentTypeId))
+                if (scoreIndex !== -1) {
+                    scoreDoc.scores[scoreIndex].score = Math.max(0, Math.min(100, score))
+                    const setup = await AssessmentSetup.findById(gsa.assessmentSetupId)
+                    await recalcResult(scoreDoc, gsa, setup)  
+                    await scoreDoc.save()
+                    updated++
+                }
+            } catch (err: any) {
+                errors.push({ studentId, error: err.message })
+            }
+        }
+
+        const totalSubmitted = scores.length
+        const avgScore = validScores.reduce((sum, s) => sum + s.score, 0) / validScores.length || 0
+
+        res.status(200).json({ 
+            message: `Batch updated ${updated}/${totalSubmitted} students`,
+            stats: { updated, avgScore: Math.round(avgScore), errors: errors.length },
+            details: { totalSubmitted, valid: validScores.length }
+        })
+    } catch (error: any) {
+        res.status(error instanceof Error ? 400 : 500).json({ 
+            message: error.message || "Internal server error" 
+        })
     }
 }
