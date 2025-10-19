@@ -8,6 +8,11 @@ const assessmentScoreSchema = new Schema<IAssessmentScore>(
       ref: 'Student', 
       required: true 
     },
+    gsaId:{
+      type: Schema.Types.ObjectId,
+      ref: 'GradeSubjectAssessment',
+      required: true
+    },
     assessmentSetupId: { 
       type: Schema.Types.ObjectId, 
       ref: 'AssessmentSetup', 

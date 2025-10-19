@@ -3,6 +3,7 @@ import { AssessmentScore } from "../../models/assessment/assessmentScore.model"
 import { GradeSubjectAssessment } from "../../models/gradeSubjectAssessment.model"
 import { StudentEnrollment } from "../../models/studentEnrollment.model"
 import { AssessmentSetup } from "../../models/assessment/assessmentSetup.model"
+import { recalcResult,validateConducted } from "../../utils/assessment.utility"
 
 // BULK GENERATION (Grade + Subject → Auto Setup from GSA)
 export const generateBulkScores = async (req: Request, res: Response): Promise<void> => {
@@ -43,11 +44,11 @@ export const generateBulkScores = async (req: Request, res: Response): Promise<v
         for (const student of students) {
             const existing = await AssessmentScore.findOne({ 
                 studentId: student._id, 
-                assessmentSetupId: gsa.assessmentSetupId 
+                agsaId: gsa._id
             })
             if (existing) continue
 
-            // ⭐ NO isConducted - ONLY score + typeName!
+            //  NO isConducted - ONLY score + typeName!
             const scores = setup.assessmentTypeIds.map((type: any) => ({
                 assessmentTypeId: type._id,
                 typeName: type.name,
@@ -56,6 +57,7 @@ export const generateBulkScores = async (req: Request, res: Response): Promise<v
 
             const scoreDoc = new AssessmentScore({
                 studentId: student._id,
+                gsaId: gsa._id,
                 assessmentSetupId: gsa.assessmentSetupId,  
                 scores,
                 result: 0
@@ -75,10 +77,10 @@ export const generateBulkScores = async (req: Request, res: Response): Promise<v
 
 // SINGLE GENERATION (Student ID → Auto Setup from GSA)
 export const generateSingleScore = async (req: Request, res: Response): Promise<void> => {
-    const { studentId } = req.body
+    const { studentId, subjectId } = req.body
     
-    if (!studentId) {
-        res.status(400).json({ message: "Missing: studentId" })
+    if (!studentId || !subjectId) {
+        res.status(400).json({ message: "Missing: studentId, subjectId" })
         return
     }
 
@@ -92,7 +94,7 @@ export const generateSingleScore = async (req: Request, res: Response): Promise<
             return
         }
 
-        const gsa = await GradeSubjectAssessment.findOne({ gradeId: enrollment.gradeId._id })
+        const gsa = await GradeSubjectAssessment.findOne({ gradeId: enrollment.gradeId._id, subjectId })
         if (!gsa) {
             res.status(400).json({ message: "No assessment setup for this class" })
             return
@@ -106,7 +108,7 @@ export const generateSingleScore = async (req: Request, res: Response): Promise<
 
         const existing = await AssessmentScore.findOne({ 
             studentId, 
-            assessmentSetupId: gsa.assessmentSetupId 
+            gsaId: gsa._id 
         })
         if (existing) {
             res.status(400).json({ message: "Marksheet exists" })
@@ -122,6 +124,7 @@ export const generateSingleScore = async (req: Request, res: Response): Promise<
 
         const scoreDoc = new AssessmentScore({
             studentId,
+            gsaId: gsa._id,
             assessmentSetupId: gsa.assessmentSetupId,
             scores,
             result: 0
@@ -136,10 +139,10 @@ export const generateSingleScore = async (req: Request, res: Response): Promise<
 
 // MULTIPLE GENERATION (Student IDs → Auto Setup from GSA)
 export const generateMultipleScores = async (req: Request, res: Response): Promise<void> => {
-    const { studentIds } = req.body
+    const { studentIds, subjectId } = req.body
     
-    if (!studentIds || !Array.isArray(studentIds)) {
-        res.status(400).json({ message: "Missing: studentIds array" })
+    if (!studentIds || !Array.isArray(studentIds) || !subjectId) {
+        res.status(400).json({ message: "Missing: studentIds array, subjectId" })
         return
     }
 
@@ -161,7 +164,10 @@ export const generateMultipleScores = async (req: Request, res: Response): Promi
             gradeGroups.get(gradeId).push(en.studentId)
         }
 
-        const gsas = await GradeSubjectAssessment.find({ gradeId: { $in: Array.from(gradeGroups.keys()) } })
+        const gsas = await GradeSubjectAssessment.find({ 
+            gradeId: { $in: Array.from(gradeGroups.keys()) }, 
+            subjectId 
+        })
         const createdScores: any[] = []
         for (const [gradeId, students] of gradeGroups) {
             const gsa = gsas.find((g: any) => g.gradeId.equals(gradeId))
@@ -170,7 +176,6 @@ export const generateMultipleScores = async (req: Request, res: Response): Promi
             const setup = await AssessmentSetup.findById(gsa.assessmentSetupId).populate('assessmentTypeIds')
             if (!setup) continue
 
-            // ⭐ NO isConducted!
             const scoresTemplate = setup.assessmentTypeIds.map((type: any) => ({
                 assessmentTypeId: type._id,
                 typeName: type.name,
@@ -180,12 +185,13 @@ export const generateMultipleScores = async (req: Request, res: Response): Promi
             for (const student of students) {
                 const existing = await AssessmentScore.findOne({ 
                     studentId: student._id, 
-                    assessmentSetupId: gsa.assessmentSetupId 
+                    gsaId: gsa._id 
                 })
                 if (existing) continue
 
                 const scoreDoc = new AssessmentScore({
                     studentId: student._id,
+                    gsaId: gsa._id,
                     assessmentSetupId: gsa.assessmentSetupId,  
                     scores: scoresTemplate,
                     result: 0
@@ -262,26 +268,23 @@ export const updateAssessmentScore = async (req: Request, res: Response): Promis
             return
         }
 
-        // Update scores
-        scores?.forEach((update: any, index: number) => {
-            if (update.score !== undefined) {
-                scoreDoc.scores[index].score = Math.max(0, Math.min(100, update.score))
-            }
-        })
-
-        // SMART RECALCULATION (ONLY conductedStages!)
-        const gsa = await GradeSubjectAssessment.findOne({ assessmentSetupId: scoreDoc.assessmentSetupId })
-        const setup = await AssessmentSetup.findById(scoreDoc.assessmentSetupId).populate('assessmentTypeIds')
-        const populatedTypes = setup!.assessmentTypeIds as any[]
         
-        let weightedSum = 0
-        scoreDoc.scores.forEach((scoreItem: any, index: number) => {
-            if (gsa!.conductedStages.includes(scoreItem.assessmentTypeId)) {
-                const typeWeight = populatedTypes[index].weight
-                weightedSum += (scoreItem.score * typeWeight) / 100
+        const gsa = await GradeSubjectAssessment.findById(scoreDoc.gsaId)
+        if (!gsa) {
+            res.status(404).json({ message: "Associated GSA not found" })
+            return
+        }
+        const setup = await AssessmentSetup.findById(scoreDoc.assessmentSetupId).populate('assessmentTypeIds')
+
+        scores?.forEach((update: any) => {
+            const scoreIndex = scoreDoc.scores.findIndex(s => s.assessmentTypeId.equals(update.assessmentTypeId))
+            if (scoreIndex !== -1) {
+                validateConducted(gsa, update.assessmentTypeId, update.typeName)
+                scoreDoc.scores[scoreIndex].score = Math.max(0, Math.min(100, update.score))
             }
         })
-        scoreDoc.result = Math.round(weightedSum * 100) / 100
+        
+        await recalcResult(scoreDoc, gsa, setup)
 
         await scoreDoc.save()
         res.status(200).json({ message: "Marksheet updated", data: scoreDoc })
@@ -295,16 +298,29 @@ export const getAllAssessmentScores = async (req: Request, res: Response): Promi
     const { studentId, gradeId, subjectId, assessmentSetupId } = req.query
     
     try {
-        const query: any = {}
-        if (studentId) query.studentId = studentId
-        if (assessmentSetupId) query.assessmentSetupId = assessmentSetupId
+    const query: any = {}
+    if (studentId) query.studentId = studentId
+    if (assessmentSetupId) query.assessmentSetupId = assessmentSetupId
 
-        const scores = await AssessmentScore.find(query)
-            .populate('studentId', 'firstName lastName')
-            .populate('assessmentSetupId', 'name')
-            .sort({ 'studentId.firstName': 1 })
+    
+    if (subjectId) {
+        const gsa = await GradeSubjectAssessment.findOne({ subjectId })
+        if (gsa) query.gsaId = gsa._id
+    }
+    if (gradeId) {
+        const gsas = await GradeSubjectAssessment.find({ gradeId })
+        if (gsas.length > 0) {
+            query.gsaId = { $in: gsas.map(g => g._id) }
+        }
+    }
 
-        res.status(200).json({ scores })
+    const scores = await AssessmentScore.find(query)
+        .populate('studentId', 'firstName lastName')
+        .populate('gsaId', 'gradeId subjectId') 
+        .populate('assessmentSetupId', 'name')
+        .sort({ 'studentId.firstName': 1 })
+
+    res.status(200).json({ scores })
     } catch (error) {
         res.status(500).json({ message: "Internal server error", error })
     }
@@ -316,6 +332,7 @@ export const getAssessmentScoreById = async (req: Request, res: Response): Promi
     try {
         const score = await AssessmentScore.findById(id)
             .populate('studentId', 'firstName lastName')
+            .populate('gsaId', 'gradeId subjectId')                   
             .populate('assessmentSetupId', 'name assessmentTypeIds')
         if (!score) {
             res.status(404).json({ message: "Marksheet not found" })

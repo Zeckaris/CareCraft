@@ -3,6 +3,7 @@ import { Types } from 'mongoose'
 export interface IAssessmentScore {
   _id?: Types.ObjectId
   studentId: Types.ObjectId
+  gsaId: Types.ObjectId
   assessmentSetupId: Types.ObjectId
   scores: [{
     assessmentTypeId: Types.ObjectId
