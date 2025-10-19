@@ -7,8 +7,8 @@ export interface IStudent extends Document {
   lastName: string
   gender: string
   dateOfBirth: Date
-  enrollmentId: Types.ObjectId
-  parentId: Types.ObjectId
+  enrollmentId: Types.ObjectId | null
+  parentId: Types.ObjectId | null
   admissionDate: Date
   profileImage?: string
   createdAt: Date

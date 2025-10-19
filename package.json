@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "backend created to provide api services for the carecraft frontend app",
   "main": "index.js",
+  "overrides": {
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.1/xlsx-0.20.1.tgz"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "seed-types": "ts-node src/scripts/seedDemoTypes.ts",
@@ -20,7 +23,9 @@
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.19.1",
-    "nodemailer": "^7.0.9"
+    "multer": "^2.0.2",
+    "nodemailer": "^7.0.9",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.1/xlsx-0.20.1.tgz"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
@@ -28,8 +33,10 @@
     "@types/datejs": "^0.0.36",
     "@types/express": "^5.0.3",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.0.0",
     "@types/node": "^24.7.2",
     "@types/nodemailer": "^7.0.2",
+    "@types/xlsx": "^0.0.35",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"

@@ -18,6 +18,7 @@ import gradeSubjectAssessmentRoutes from './routes/admin/gradeSubjectAssessment.
 
 const app= express()
 
+app.use(express.urlencoded({ extended: true }));
 app.use(express.json())
 app.use(cors({
     origin: '*',  // To be modified later
