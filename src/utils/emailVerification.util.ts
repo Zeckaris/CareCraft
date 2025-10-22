@@ -43,7 +43,7 @@ export const cleanupExpiredCodes = () => {
 
 export const startVerificationCleanup = () => {
   console.log('verification cleanup done')
-  setInterval(cleanupExpiredCodes, 60 * 1000);
+  setInterval(cleanupExpiredCodes, 180 * 1000);
   cleanupExpiredCodes(); 
 };
 

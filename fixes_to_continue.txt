@@ -2,3 +2,4 @@
 - should improve naming inconistencies like if i am using signup the corresponding to this should be
 signin and not logout
 -try to make the token sent for invitation much shorter than it is now
+-we need to add admin endpoints/controllers that allow it to see all the teachers, parents

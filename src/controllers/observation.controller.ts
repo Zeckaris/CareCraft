@@ -3,6 +3,7 @@ import { Observation } from '../models/observation.model';
 import { Student } from '../models/student.model';
 import UserAccount from '../models/userAccount.model'; 
 import mongoose from 'mongoose';
+import { StudentEnrollment } from '../models/studentEnrollment.model';
 
 export const getAllObservations = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, studentId, teacherId, category } = req.query;
@@ -11,7 +12,14 @@ export const getAllObservations = async (req: Request, res: Response): Promise<v
   const filter: any = {};
   if (studentId && mongoose.isValidObjectId(studentId)) filter.studentId = studentId;
   if (teacherId && mongoose.isValidObjectId(teacherId)) filter.teacherId = teacherId;
-  if (category) filter.category = category;
+  if (category) {
+    const validCategories = ['Behavior', 'Academic', 'Social', 'Attendance', 'Health', 'Extracurricular'];
+    if (!validCategories.includes(category as string)) {
+        res.status(400).json({ message: 'Invalid category. Must be one of: ' + validCategories.join(', ') });
+    return;
+  }
+  filter.category = category;
+}
 
   try {
     const observations = await Observation.find(filter)
@@ -21,13 +29,11 @@ export const getAllObservations = async (req: Request, res: Response): Promise<v
     const total = await Observation.countDocuments(filter);
 
     res.status(200).json({ 
-      data: observations, 
-      pagination: { 
-        page: Number(page), 
-        limit: Number(limit), 
-        total, 
-        pages: Math.ceil(total / Number(limit)) 
-      } 
+        data: observations, 
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        pages: Math.ceil(total / Number(limit))
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error fetching observations.', error });
@@ -61,10 +67,15 @@ export const createObservation = async (req: Request, res: Response): Promise<vo
     res.status(400).json({ message: 'Invalid studentId or teacherId' });
     return;
   }
-  if (!date || !category || !description) {
-    res.status(400).json({ message: 'Missing required fields: date, category, or description' });
+    if (!date && !category && !description) {
+    res.status(400).json({ message: 'At least one field (date, category, description) required.' });
     return;
-  }
+    }
+    const validCategories = ['Behavior', 'Academic', 'Social', 'Attendance', 'Health', 'Extracurricular'];
+    if (category && !validCategories.includes(category)) {
+    res.status(400).json({ message: 'Invalid category. Must be one of: ' + validCategories.join(', ') });
+    return;
+    }
 
   try {
     const student = await Student.findById(studentId);
@@ -100,10 +111,15 @@ export const updateObservation = async (req: Request, res: Response): Promise<vo
     res.status(400).json({ message: 'Invalid observation ID' });
     return;
   }
-  if (!date && !category && !description) {
+    if (!date && !category && !description) {
     res.status(400).json({ message: 'At least one field (date, category, description) required.' });
     return;
-  }
+    }
+    const validCategories = ['Behavior', 'Academic', 'Social', 'Attendance', 'Health', 'Extracurricular'];
+    if (category && !validCategories.includes(category)) {
+    res.status(400).json({ message: 'Invalid category. Must be one of: ' + validCategories.join(', ') });
+    return;
+    }
 
   try {
     const observation = await Observation.findById(id);
@@ -143,5 +159,222 @@ export const deleteObservation = async (req: Request, res: Response): Promise<vo
     res.status(200).json({ message: 'Observation deleted successfully.' });
   } catch (error) {
     res.status(500).json({ message: 'Server error deleting observation.', error });
+  }
+};
+
+
+
+export const getObservationsByStudentAndDate = async (req: Request, res: Response): Promise<void> => {
+    const { studentId } = req.params;
+    const { startDate, endDate, category } = req.query;
+
+    if (!mongoose.isValidObjectId(studentId)) {
+    res.status(400).json({ message: 'Invalid studentId' });
+    return;
+    }
+    if (!startDate || !endDate) {
+        res.status(400).json({ message: 'Missing required fields: startDate or endDate' });
+        return;
+    }
+    
+    const filter: any = {studentId, 
+        date: {
+            $gte : new Date( startDate as string ),
+            $lt : new Date ( endDate as string )
+        }
+    }
+
+    if (category) {
+    const validCategories = ['Behavior', 'Academic', 'Social', 'Attendance', 'Health', 'Extracurricular'];
+    if (!validCategories.includes(category as string)) {
+      res.status(400).json({ message: 'Invalid category. Must be one of: ' + validCategories.join(', ') });
+      return;
+    }
+    filter.category = category;
+  }
+
+    try{
+        const observations = await Observation.find(filter).sort({ date: -1 });
+        res.status(200).json({ data: observations, count: observations.length });
+    }catch(error){
+        res.status(500).json({message : "Server error"})
+    }
+}
+
+
+
+export const getObservationsByTeacher = async (req: Request, res: Response): Promise<void> => {
+  const { teacherId } = req.params;
+  const { page = 1, limit = 10, category } = req.query;
+  const skip = (Number(page) - 1) * Number(limit);
+
+  if (!mongoose.isValidObjectId(teacherId)) {
+    res.status(400).json({ message: 'Invalid teacherId' });
+    return;
+  }
+
+  const filter: any = { teacherId };
+  if (category) {
+    const validCategories = ['Behavior', 'Academic', 'Social', 'Attendance', 'Health', 'Extracurricular'];
+    if (!validCategories.includes(category as string)) {
+      res.status(400).json({ message: 'Invalid category. Must be one of: ' + validCategories.join(', ') });
+      return;
+    }
+    filter.category = category;
+  }
+
+  try {
+    const observations = await Observation.find(filter)
+      .sort({ date: -1 })
+      .skip(skip)
+      .limit(Number(limit));
+    const total = await Observation.countDocuments(filter);
+
+    res.status(200).json({ 
+      data: observations, 
+      page: Number(page),
+      limit: Number(limit),
+      total,
+      pages: Math.ceil(total / Number(limit))
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error fetching teacher observations.', error });
+  }
+};
+
+export const bulkDeleteObservationsByStudent = async (req: Request, res: Response): Promise<void> => {
+  const { studentId } = req.params;
+
+  if (!mongoose.isValidObjectId(studentId)) {
+    res.status(400).json({ message: 'Invalid studentId' });
+    return;
+  }
+
+  try {
+    const student = await Student.findById(studentId);
+    if (!student) {
+      res.status(404).json({ message: 'Student not found.' });
+      return;
+    }
+
+    const result = await Observation.deleteMany({ studentId });
+    res.status(200).json({ message: `Deleted ${result.deletedCount} observations successfully.` });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error deleting observations.', error });
+  }
+};
+
+
+export const getObservationsByTeacherAndGrade = async (req: Request, res: Response): Promise<void> => {
+  const { teacherId, gradeId } = req.params;
+  const { page = 1, limit = 10, category } = req.query;
+  const skip = (Number(page) - 1) * Number(limit);
+
+  if (!mongoose.isValidObjectId(teacherId) || !mongoose.isValidObjectId(gradeId)) {
+    res.status(400).json({ message: 'Invalid teacherId or gradeId' });
+    return;
+  }
+
+  try {
+    const teacher = await UserAccount.findOne({ _id: teacherId, role: 'teacher' });
+    if (!teacher) {
+      res.status(404).json({ message: 'Teacher not found or invalid role.' });
+      return;
+    }
+
+    const enrollments = await StudentEnrollment.find({ gradeId, isActive: true }).select('studentId');
+    const studentIds = enrollments.map(enrollment => enrollment.studentId);
+
+    if (!studentIds.length) {
+      res.status(200).json({ data: [], page: Number(page), limit: Number(limit), total: 0, pages: 0 });
+      return;
+    }
+
+    const filter: any = { teacherId, studentId: { $in: studentIds } };
+    if (category) {
+      const validCategories = ['Behavior', 'Academic', 'Social', 'Attendance', 'Health', 'Extracurricular'];
+      if (!validCategories.includes(category as string)) {
+        res.status(400).json({ message: 'Invalid category. Must be one of: ' + validCategories.join(', ') });
+        return;
+      }
+      filter.category = category;
+    }
+
+    const observations = await Observation.find(filter)
+      .sort({ date: -1 })
+      .skip(skip)
+      .limit(Number(limit));
+    const total = await Observation.countDocuments(filter);
+
+    res.status(200).json({ 
+      data: observations, 
+      page: Number(page),
+      limit: Number(limit),
+      total,
+      pages: Math.ceil(total / Number(limit))
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error fetching observations by teacher and grade.', error });
+  }
+};
+
+
+
+export const getObservationsByCategoryAndGrade = async (req: Request, res: Response): Promise<void> => {
+  const { gradeId } = req.params;
+  const { category, page = 1, limit = 10 } = req.query;
+  const teacherId = (req as any).user?._id;
+
+  if (!mongoose.isValidObjectId(gradeId)) {
+    res.status(400).json({ message: 'Invalid gradeId' });
+    return;
+  }
+  if (!mongoose.isValidObjectId(teacherId)) {
+    res.status(400).json({ message: 'Invalid teacherId from token' });
+    return;
+  }
+  if (!category) {
+    res.status(400).json({ message: 'Category is required' });
+    return;
+  }
+  const validCategories = ['Behavior', 'Academic', 'Social', 'Attendance', 'Health', 'Extracurricular'];
+  if (!validCategories.includes(category as string)) {
+    res.status(400).json({ message: 'Invalid category. Must be one of: ' + validCategories.join(', ') });
+    return;
+  }
+
+  try {
+    const teacher = await UserAccount.findOne({ _id: teacherId, role: 'teacher' });
+    if (!teacher) {
+      res.status(404).json({ message: 'Teacher not found or invalid role.' });
+      return;
+    }
+
+    const enrollments = await StudentEnrollment.find({ gradeId, isActive: true }).select('studentId');
+    const studentIds = enrollments.map(enrollment => enrollment.studentId);
+
+    if (!studentIds.length) {
+      res.status(200).json({ data: [], page: Number(page), limit: Number(limit), total: 0, pages: 0 });
+      return;
+    }
+
+    const filter: any = { teacherId, studentId: { $in: studentIds }, category };
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const observations = await Observation.find(filter)
+      .sort({ date: -1 })
+      .skip(skip)
+      .limit(Number(limit));
+    const total = await Observation.countDocuments(filter);
+
+    res.status(200).json({ 
+      data: observations, 
+      page: Number(page),
+      limit: Number(limit),
+      total,
+      pages: Math.ceil(total / Number(limit))
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error fetching observations by category and grade.', error });
   }
 };

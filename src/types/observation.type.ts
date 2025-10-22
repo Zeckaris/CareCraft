@@ -5,7 +5,7 @@ export interface IObservation extends Document {
   studentId: Types.ObjectId
   teacherId: Types.ObjectId
   date: Date
-  category: string
+  category: 'Behavior' | 'Academic' | 'Social' | 'Attendance' | 'Health' | 'Extracurricular'
   description: string
   createdAt: Date
 }
