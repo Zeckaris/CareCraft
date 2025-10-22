@@ -4,6 +4,7 @@ import { Student } from '../models/student.model';
 import UserAccount from '../models/userAccount.model'; 
 import mongoose from 'mongoose';
 import { StudentEnrollment } from '../models/studentEnrollment.model';
+import { AttributeCategory } from '../models/attributeCategory.model';
 
 export const getAllObservations = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, studentId, teacherId, category } = req.query;
@@ -13,15 +14,19 @@ export const getAllObservations = async (req: Request, res: Response): Promise<v
   if (studentId && mongoose.isValidObjectId(studentId)) filter.studentId = studentId;
   if (teacherId && mongoose.isValidObjectId(teacherId)) filter.teacherId = teacherId;
   if (category) {
-    const validCategories = ['Behavior', 'Academic', 'Social', 'Attendance', 'Health', 'Extracurricular'];
-    if (!validCategories.includes(category as string)) {
-        res.status(400).json({ message: 'Invalid category. Must be one of: ' + validCategories.join(', ') });
+  if (!mongoose.isValidObjectId(category)) {
+    res.status(400).json({ message: 'Invalid category ID' });
     return;
   }
-  filter.category = category;
-}
+  }
 
   try {
+    const attributeCategory = await AttributeCategory.findById(category);
+    if (!attributeCategory) {
+      res.status(404).json({ message: 'AttributeCategory not found' });
+      return;
+    }
+    filter.category = category;
     const observations = await Observation.find(filter)
       .sort({ date: -1 })
       .skip(skip)
@@ -61,23 +66,31 @@ export const getObservationById = async (req: Request, res: Response): Promise<v
 };
 
 export const createObservation = async (req: Request, res: Response): Promise<void> => {
-  const { studentId, teacherId, date, category, description } = req.body;
+  const { studentId, teacherId, date, category, description, score } = req.body;
 
   if (!mongoose.isValidObjectId(studentId) || !mongoose.isValidObjectId(teacherId)) {
     res.status(400).json({ message: 'Invalid studentId or teacherId' });
     return;
   }
-    if (!date && !category && !description) {
-    res.status(400).json({ message: 'At least one field (date, category, description) required.' });
+  if (!date || !category || !description || !score) {
+    res.status(400).json({ message: 'Missing required fields: date, category, description, or score' });
     return;
-    }
-    const validCategories = ['Behavior', 'Academic', 'Social', 'Attendance', 'Health', 'Extracurricular'];
-    if (category && !validCategories.includes(category)) {
-    res.status(400).json({ message: 'Invalid category. Must be one of: ' + validCategories.join(', ') });
+  }
+  if (!mongoose.isValidObjectId(category)) {
+    res.status(400).json({ message: 'Invalid category ID' });
     return;
-    }
+  }
 
   try {
+    const attributeCategory = await AttributeCategory.findById(category);
+    if (!attributeCategory) {
+      res.status(404).json({ message: 'AttributeCategory not found' });
+      return;
+    }
+    if (score < attributeCategory.minScore || score > attributeCategory.maxScore) {
+      res.status(400).json({ message: `Score must be between ${attributeCategory.minScore} and ${attributeCategory.maxScore}` });
+      return;
+    }
     const student = await Student.findById(studentId);
     if (!student) {
       res.status(404).json({ message: 'Student not found.' });
@@ -94,7 +107,8 @@ export const createObservation = async (req: Request, res: Response): Promise<vo
       teacherId, 
       date: new Date(date), 
       category, 
-      description 
+      description,
+      score
     });
 
     res.status(201).json({ message: 'Observation created successfully.', data: observation });
@@ -105,23 +119,36 @@ export const createObservation = async (req: Request, res: Response): Promise<vo
 
 export const updateObservation = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { date, category, description } = req.body;
+  const { date, category, description, score } = req.body;
 
   if (!mongoose.isValidObjectId(id)) {
     res.status(400).json({ message: 'Invalid observation ID' });
     return;
   }
-    if (!date && !category && !description) {
-    res.status(400).json({ message: 'At least one field (date, category, description) required.' });
+
+  if (!date && !category && !description && score === undefined) {
+    res.status(400).json({ message: 'At least one field (date, category, description, score) required.' });
     return;
-    }
-    const validCategories = ['Behavior', 'Academic', 'Social', 'Attendance', 'Health', 'Extracurricular'];
-    if (category && !validCategories.includes(category)) {
-    res.status(400).json({ message: 'Invalid category. Must be one of: ' + validCategories.join(', ') });
+  }
+
+  if (category) {
+  if (!mongoose.isValidObjectId(category)) {
+    res.status(400).json({ message: 'Invalid category ID' });
     return;
-    }
+  }}
 
   try {
+
+  const attributeCategory = await AttributeCategory.findById(category);
+  if (!attributeCategory) {
+    res.status(404).json({ message: 'AttributeCategory not found' });
+    return;
+  }
+  if (score !== undefined && (score < attributeCategory.minScore || score > attributeCategory.maxScore)) {
+    res.status(400).json({ message: `Score must be between ${attributeCategory.minScore} and ${attributeCategory.maxScore}` });
+    return;
+  }
+
     const observation = await Observation.findById(id);
     if (!observation) {
       res.status(404).json({ message: 'Observation not found.' });
@@ -132,6 +159,7 @@ export const updateObservation = async (req: Request, res: Response): Promise<vo
     if (date) updateData.date = new Date(date);
     if (category) updateData.category = category;
     if (description) updateData.description = description;
+    if (score !== undefined) updateData.score = score;
 
     const updated = await Observation.findByIdAndUpdate(id, updateData, { new: true });
     res.status(200).json({ message: 'Observation updated successfully.', data: updated });
@@ -185,17 +213,21 @@ export const getObservationsByStudentAndDate = async (req: Request, res: Respons
     }
 
     if (category) {
-    const validCategories = ['Behavior', 'Academic', 'Social', 'Attendance', 'Health', 'Extracurricular'];
-    if (!validCategories.includes(category as string)) {
-      res.status(400).json({ message: 'Invalid category. Must be one of: ' + validCategories.join(', ') });
-      return;
+    if (!mongoose.isValidObjectId(category)) {
+        res.status(400).json({ message: 'Invalid category ID' });
+        return;
+      }
     }
-    filter.category = category;
-  }
 
     try{
-        const observations = await Observation.find(filter).sort({ date: -1 });
-        res.status(200).json({ data: observations, count: observations.length });
+      const attributeCategory = await AttributeCategory.findById(category);
+      if (!attributeCategory) {
+        res.status(404).json({ message: 'AttributeCategory not found' });
+        return;
+      }
+      filter.category = category;
+      const observations = await Observation.find(filter).sort({ date: -1 });
+      res.status(200).json({ data: observations, count: observations.length });
     }catch(error){
         res.status(500).json({message : "Server error"})
     }
@@ -215,15 +247,18 @@ export const getObservationsByTeacher = async (req: Request, res: Response): Pro
 
   const filter: any = { teacherId };
   if (category) {
-    const validCategories = ['Behavior', 'Academic', 'Social', 'Attendance', 'Health', 'Extracurricular'];
-    if (!validCategories.includes(category as string)) {
-      res.status(400).json({ message: 'Invalid category. Must be one of: ' + validCategories.join(', ') });
+  if (!mongoose.isValidObjectId(category)) {
+    res.status(400).json({ message: 'Invalid category ID' });
+    return;
+  }
+  }
+  try {
+    const attributeCategory = await AttributeCategory.findById(category);
+    if (!attributeCategory) {
+      res.status(404).json({ message: 'AttributeCategory not found' });
       return;
     }
-    filter.category = category;
-  }
-
-  try {
+  filter.category = category;
     const observations = await Observation.find(filter)
       .sort({ date: -1 })
       .skip(skip)
@@ -291,14 +326,18 @@ export const getObservationsByTeacherAndGrade = async (req: Request, res: Respon
     }
 
     const filter: any = { teacherId, studentId: { $in: studentIds } };
-    if (category) {
-      const validCategories = ['Behavior', 'Academic', 'Social', 'Attendance', 'Health', 'Extracurricular'];
-      if (!validCategories.includes(category as string)) {
-        res.status(400).json({ message: 'Invalid category. Must be one of: ' + validCategories.join(', ') });
-        return;
-      }
-      filter.category = category;
-    }
+  if (category) {
+  if (!mongoose.isValidObjectId(category)) {
+    res.status(400).json({ message: 'Invalid category ID' });
+    return;
+  }
+  const attributeCategory = await AttributeCategory.findById(category);
+  if (!attributeCategory) {
+    res.status(404).json({ message: 'AttributeCategory not found' });
+    return;
+  }
+  filter.category = category;
+}
 
     const observations = await Observation.find(filter)
       .sort({ date: -1 })
@@ -334,16 +373,21 @@ export const getObservationsByCategoryAndGrade = async (req: Request, res: Respo
     return;
   }
   if (!category) {
-    res.status(400).json({ message: 'Category is required' });
-    return;
+  res.status(400).json({ message: 'Category is required' });
+  return;
   }
-  const validCategories = ['Behavior', 'Academic', 'Social', 'Attendance', 'Health', 'Extracurricular'];
-  if (!validCategories.includes(category as string)) {
-    res.status(400).json({ message: 'Invalid category. Must be one of: ' + validCategories.join(', ') });
+  if (!mongoose.isValidObjectId(category)) {
+    res.status(400).json({ message: 'Invalid category ID' });
     return;
   }
 
+
   try {
+  const attributeCategory = await AttributeCategory.findById(category);
+  if (!attributeCategory) {
+    res.status(400).json({ message: 'AttributeCategory not found' });
+    return;
+  }
     const teacher = await UserAccount.findOne({ _id: teacherId, role: 'teacher' });
     if (!teacher) {
       res.status(404).json({ message: 'Teacher not found or invalid role.' });

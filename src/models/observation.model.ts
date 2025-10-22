@@ -6,10 +6,8 @@ const observationSchema = new Schema<IObservation>(
     studentId: { type: Schema.Types.ObjectId, ref: 'Student', required: true },
     teacherId: { type: Schema.Types.ObjectId, ref: 'UserAccount', required: true },
     date: { type: Date, required: true },
-    category: {type: String, 
-      required: true, 
-      trim: true,
-      enum: ['Behavior', 'Academic', 'Social', 'Attendance', 'Health', 'Extracurricular'] },
+    category: { type: Schema.Types.ObjectId, ref: 'AttributeCategory', required: true },
+    score: { type: Number, required: true },
     description: { type: String, required: true }
   },
   {
