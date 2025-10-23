@@ -18,6 +18,7 @@ import gradeSubjectAssessmentRoutes from './routes/admin/gradeSubjectAssessment.
 import studentEnrollmentRouter from './routes/studentEnrollment.route'
 import observationRouter from './routes/observation.route';
 import attributeRouter from './routes/attributeCategory.route'
+import badgeDefinitionRouter from './routes/badgeDefinition.route'
 
 const app= express()
 
@@ -42,6 +43,7 @@ app.use('/api/assessment/gsa', gradeSubjectAssessmentRoutes);
 app.use('/api/enrollement', studentEnrollmentRouter);
 app.use('/api/observation', observationRouter)
 app.use('/api/attribute', attributeRouter)
+app.use('/api/badge', badgeDefinitionRouter)
 
 
 connectDB().then(() => {
