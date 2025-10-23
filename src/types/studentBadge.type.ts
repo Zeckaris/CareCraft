@@ -5,5 +5,7 @@ export interface IStudentBadge extends Document {
   badgeIds: Types.ObjectId[]
   studentId: Types.ObjectId
   teacherId: Types.ObjectId
+  level: number
+  criteriaMet: boolean
   createdAt: Date
 }

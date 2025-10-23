@@ -6,7 +6,9 @@ const badgeDefinitionSchema = new Schema<IBadgeDefinition>(
     name: { type: String, required: true, trim: true },
     description: { type: String, required: true },
     icon: { type: String, default: '' },
-    createdBy: { type: Schema.Types.ObjectId, ref: 'UserAccount', required: true }
+    createdBy: { type: Schema.Types.ObjectId, ref: 'UserAccount', required: true },
+    level: { type: Number, default: 1 },
+    criteria: [{ type: Schema.Types.ObjectId, ref: 'BadgeCriteria' }]
   },
   {
     timestamps: { createdAt: 'createdAt', updatedAt: false }
