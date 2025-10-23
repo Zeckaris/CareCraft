@@ -21,6 +21,7 @@ import attributeRouter from './routes/attributeCategory.route'
 import badgeDefinitionRouter from './routes/badgeDefinition.route'
 import badgeCriteriaRouter from './routes/badgeCriteria.route'
 import studentBadgeRouter from './routes/studentBadge.route'
+import actionPlanRouter   from './routes/actionPlan.route'
 
 
 const app= express()
@@ -49,6 +50,7 @@ app.use('/api/attribute', attributeRouter);
 app.use('/api/badge', badgeDefinitionRouter);
 app.use('/api/badgeCriteria', badgeCriteriaRouter);
 app.use('/api/studentBadge', studentBadgeRouter);
+app.use('/api/actionPlan', actionPlanRouter);
 
 
 connectDB().then(() => {
