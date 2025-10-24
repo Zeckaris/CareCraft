@@ -24,6 +24,7 @@ import studentBadgeRouter from './routes/studentBadge.route';
 import actionPlanRouter   from './routes/actionPlan.route';
 import attributeEvaluationRouter from './routes/attributeEvaluation.route';
 import sharedPlanTemplateRouter from './routes/sharedPlanTemplate.route';
+import adminUserRouter from './routes/admin/adminUser.route';
 
 
 const app= express()
@@ -55,6 +56,7 @@ app.use('/api/badgeCriteria', badgeCriteriaRouter);
 app.use('/api/studentBadge', studentBadgeRouter);
 app.use('/api/actionPlan', actionPlanRouter);
 app.use('/api/sharedPlanTemplate', sharedPlanTemplateRouter);
+app.use('/api/adminUser', adminUserRouter);
 
 
 connectDB().then(() => {
