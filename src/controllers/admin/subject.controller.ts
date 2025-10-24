@@ -1,52 +1,55 @@
 import { Request, Response } from "express"
 import { Subject } from "../../models/subject.model"
+import { sendResponse } from "../../utils/sendResponse.util"
 
 export const createSubject = async (req: Request, res: Response): Promise<void> => {
     const { name, description } = req.body
     if (!name) {
-        res.status(400).json({ message: "Missing required field: name" })
+        sendResponse(res, 400, false, "Missing required field: name")
         return
     }
     try {
         const existingSubject = await Subject.findOne({ name: name.trim() })
         if (existingSubject) {
-            res.status(400).json({ message: "Subject already exists" })
+            sendResponse(res, 400, false, "Subject already exists")
             return
         }
 
         const newSubject = new Subject({ name: name.trim(), description })
         await newSubject.save()
-        res.status(201).json({ message: "Subject created successfully", data: newSubject })
+        sendResponse(res, 201, true, "Subject created successfully", newSubject)
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
+        return;
     }
 }
 
 export const getAllSubjects = async (req: Request, res: Response): Promise<void> => {
     try {
         const subjects = await Subject.find().sort({ createdAt: -1 })
-        res.status(200).json({ subjects })
+        sendResponse(res, 200, true, "Subjects fetched successfully", subjects)
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
     }
 }
 
 export const getSubjectById = async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params
     if (!id) {
-        res.status(400).json({ message: "Missing required field: id" })
+        sendResponse(res, 400, false, "Missing required field: id")
         return
     }
 
     try {
         const subject = await Subject.findById(id)
         if (!subject) {
-            res.status(404).json({ message: "Subject not found" })
+            sendResponse(res, 404, false, "Subject not found")
             return
         }
-        res.status(200).json({ subject })
+        sendResponse(res, 200, true, "Subject fetched successfully", subject)
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
+        return;
     }
 }
 
@@ -54,18 +57,18 @@ export const updateSubject = async (req: Request, res: Response): Promise<void> 
     const { id } = req.params
     const { name, description } = req.body
     if (!id) {
-        res.status(400).json({ message: "Missing required field: id" })
+        sendResponse(res, 400, false, "Missing required field: id")
         return
     }
     if (!name && !description) {
-        res.status(400).json({ message: "At least one field (name or description) is required" })
+        sendResponse(res, 400, false, "At least one field (name or description) is required")
         return
     }
 
     try {
         const subject = await Subject.findById(id)
         if (!subject) {
-            res.status(404).json({ message: "Subject not found" })
+            sendResponse(res, 404, false, "Subject not found")
             return
         }
 
@@ -73,7 +76,7 @@ export const updateSubject = async (req: Request, res: Response): Promise<void> 
         if (name && name.trim() !== subject.name) {
             const existingSubject = await Subject.findOne({ name: name.trim() })
             if (existingSubject) {
-                res.status(400).json({ message: "Subject name already exists" })
+                sendResponse(res, 400, false, "Subject name already exists")
                 return
             }
         }
@@ -82,27 +85,29 @@ export const updateSubject = async (req: Request, res: Response): Promise<void> 
         subject.description = description || subject.description
         await subject.save()
 
-        res.status(200).json({ message: "Subject updated successfully", data: subject })
+        sendResponse(res, 200, true, "Subject updated successfully", subject)
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
+        return;
     }
 }
 
 export const deleteSubject = async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params
     if (!id) {
-        res.status(400).json({ message: "Missing required field: id" })
+        sendResponse(res, 400, false, "Missing required field: id")
         return
     }
 
     try {
         const subject = await Subject.findByIdAndDelete(id)
         if (!subject) {
-            res.status(404).json({ message: "Subject not found" })
+            sendResponse(res, 404, false, "Subject not found")
             return
         }
-        res.status(200).json({ message: "Subject deleted successfully" })
+        sendResponse(res, 200, true, "Subject deleted successfully")
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
+        return;
     }
 }
