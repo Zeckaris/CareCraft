@@ -7,6 +7,7 @@ import { generateToken, prepareUserData } from '../../utils/auth.util';
 import mongoose from 'mongoose';
 import { validateEmail, sendInviteEmail, validateVerificationCode, verificationCodes, transporter } from '../../utils/emailVerification.util'
 import crypto from 'crypto';
+import { sendResponse } from '../../utils/sendResponse.util';
 
 
 interface SignupRequestBody {
@@ -46,10 +47,10 @@ export const sendVerification = async (req: Request, res: Response) => {
         <p>Enter this code on the signup page to continue.</p>
       `,
     });
-    res.status(200).json({ message: 'Verification code sent! Check your inbox.' });
+     sendResponse(res, 200, true, 'Verification code sent! Check your inbox.');
   } catch (error) {
     verificationCodes.delete(email);
-    res.status(500).json({ message: 'Failed to send verification email.' });
+    sendResponse(res, 500, false, 'Failed to send verification email.');
   }
 };
 
@@ -59,19 +60,19 @@ export const signupUser = async (req: Request, res: Response): Promise<void> => 
     req.body as SignupRequestBody;
 
   if (!firstName || !lastName || !email || !password || !role || !phoneNumber) {
-    res.status(400).json({ message: 'Missing required fields.' });
+    sendResponse(res, 400, false, 'Missing required fields.');
     return;
   }
 
   try {
     const existingUser = await UserAccount.findOne({ email });
     if (existingUser) {
-      res.status(400).json({ message: 'User already exists.' });
+      sendResponse(res, 400, false, 'User already exists.');
       return;
     }
     const codeValidation = validateVerificationCode(email, verificationCode);
     if (!codeValidation.success) {
-      res.status(400).json({ message: codeValidation.message });
+      sendResponse(res, 400, false, codeValidation.message);
       return;
     }
 
@@ -79,37 +80,36 @@ export const signupUser = async (req: Request, res: Response): Promise<void> => 
 
     if (role === 'parent' || role === 'teacher') {
       if (!inviteToken) {
-        res.status(400).json({ message: 'Invite token is required for this role.' });
+        sendResponse(res, 400, false, 'Invite token is required for this role.');
         return;
       }
 
       const tokenRecord = await InviteToken.findOne({ token: inviteToken });
       if (!tokenRecord) {
-        res.status(400).json({ message: 'Invalid invite token.' });
+        sendResponse(res, 400, false, 'Invalid invite token.');
         return;
       }
       if (tokenRecord.role !== role) {
-        res.status(400).json({ message: 'Invite token role mismatch.' });
+        sendResponse(res, 400, false, 'Invite token role mismatch.');
         return;
       }
       if (tokenRecord.isUsed || tokenRecord.expiresAt < new Date()) {
-        res.status(400).json({ message: 'Invite token is expired or already used.' });
+        sendResponse(res, 400, false, 'Invite token is expired or already used.');
         return;
       }
 
       if (role === 'parent') {
         if (!tokenRecord.createdFor) {
-          res.status(400).json({ message: 'No student associated with this invite token.' });
+          sendResponse(res, 400, false, 'No student associated with this invite token.');
           return;
         }
         studentToAssociate = await Student.findById(tokenRecord.createdFor);
         if (!studentToAssociate) {
-          res.status(404).json({ message: 'Associated student not found.' });
+          sendResponse(res, 404, false, 'Associated student not found.');
           return;
         }
       }
 
-      console.log("tokenrecord is being modified");
       tokenRecord.isUsed = true;
       await tokenRecord.save();
     }
@@ -129,9 +129,10 @@ export const signupUser = async (req: Request, res: Response): Promise<void> => 
       await studentToAssociate.save();
     }
 
-    res.status(201).json({ message: 'User created successfully.' });
+    sendResponse(res, 201, true, 'User created successfully.');
   } catch (error) {
-    res.status(500).json({ message: 'Internal server error.', error });
+    sendResponse(res, 500, false, 'Internal server error.', null, error);
+    return
   }
 };
 
@@ -140,19 +141,19 @@ export const signupUser = async (req: Request, res: Response): Promise<void> => 
 export const loginUser= async(req: Request, res: Response): Promise<void> =>{
     const {email, password} = req.body
     if (!email || !password){
-        res.status(400).json({message: "Missing fields"})
+        sendResponse(res, 400, false, 'Missing fields');
         return
     }
 
     try{
         const user= await UserAccount.findOne({email})
         if(!user){
-            res.status(401).json({message: "Invalid email or password"})
+            sendResponse(res, 401, false, 'Invalid email or password');
             return
         }
         const isPasswordValid= await bcrypt.compare(password, user.password)
         if (!isPasswordValid){
-            res.status(401).json({message: "Invalid email or password"})
+            sendResponse(res, 401, false, 'Invalid email or password');
             return
         }
 
@@ -162,28 +163,30 @@ export const loginUser= async(req: Request, res: Response): Promise<void> =>{
         await user.save()
         const response= prepareUserData(user)
         
-        res.status(200).json({message: "Login successful", token, response})
+        sendResponse(res, 200, true, 'Login successful', { token, user: response });
     }catch (error){
-        res.status(500).json({message: "Internal server error"})
+        sendResponse(res, 500, false, 'Internal server error');
+        return
     }
 }
 
 export const getCurrentUser= async (req:Request, res: Response):Promise<void> =>{
     const userId= (req as any).user?._id
     if (!userId) {
-       res.status(401).json({ message: 'Unauthorized.'})
+       sendResponse(res, 401, false, 'Unauthorized.');
     }
 
     try{
         const user = await UserAccount.findById(userId).select('-password')
         if (!user) {
-        res.status(404).json({ message: 'User not found.' })
+        sendResponse(res, 404, false, 'User not found.');
         return;
         }
 
-        res.status(200).json({ user })
+        sendResponse(res, 200, true, 'User fetched successfully.', user);
     }catch(error){
-        res.status(500).json({ message: 'Server error fetching user.', error })
+        sendResponse(res, 500, false, 'Server error fetching user.', null, error);
+        return;
     }
     
 }
