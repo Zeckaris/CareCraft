@@ -13,6 +13,7 @@ const attributeItemSchema = new Schema<IAttributeItem>(
 const attributeEvaluationSchema = new Schema<IAttributeEvaluation>(
   {
     studentId: { type: Schema.Types.ObjectId, ref: 'Student', required: true },
+    studentEnrollmentId: { type: Schema.Types.ObjectId, ref: 'StudentEnrollment', required: true },
     teacherId: { type: Schema.Types.ObjectId, ref: 'UserAccount', required: true },
     attributes: { type: [attributeItemSchema], required: true },
     totalScore: { type: Number, required: true },
@@ -22,6 +23,11 @@ const attributeEvaluationSchema = new Schema<IAttributeEvaluation>(
     timestamps: { createdAt: 'createdAt', updatedAt: false }
   }
 )
+
+attributeEvaluationSchema.pre('save', function (next) {
+  this.totalScore = this.attributes.reduce((acc, item) => acc + item.score, 0);
+  next();
+});
 
 export const AttributeEvaluation = model<IAttributeEvaluation>(
   'AttributeEvaluation',

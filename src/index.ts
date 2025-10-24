@@ -17,11 +17,12 @@ import assessmentScoreRoutes from './routes/assessment/assessmentScore.routes'
 import gradeSubjectAssessmentRoutes from './routes/admin/gradeSubjectAssessment.route';
 import studentEnrollmentRouter from './routes/studentEnrollment.route'
 import observationRouter from './routes/observation.route';
-import attributeRouter from './routes/attributeCategory.route'
-import badgeDefinitionRouter from './routes/badgeDefinition.route'
-import badgeCriteriaRouter from './routes/badgeCriteria.route'
-import studentBadgeRouter from './routes/studentBadge.route'
-import actionPlanRouter   from './routes/actionPlan.route'
+import attributeRouter from './routes/attributeCategory.route';
+import badgeDefinitionRouter from './routes/badgeDefinition.route';
+import badgeCriteriaRouter from './routes/badgeCriteria.route';
+import studentBadgeRouter from './routes/studentBadge.route';
+import actionPlanRouter   from './routes/actionPlan.route';
+import attributeEvaluationRouter from './routes/attributeEvaluation.route';
 
 
 const app= express()
@@ -47,6 +48,7 @@ app.use('/api/assessment/gsa', gradeSubjectAssessmentRoutes);
 app.use('/api/enrollement', studentEnrollmentRouter);
 app.use('/api/observation', observationRouter);
 app.use('/api/attribute', attributeRouter);
+app.use('/api/attributeEvaluation', attributeEvaluationRouter);
 app.use('/api/badge', badgeDefinitionRouter);
 app.use('/api/badgeCriteria', badgeCriteriaRouter);
 app.use('/api/studentBadge', studentBadgeRouter);
