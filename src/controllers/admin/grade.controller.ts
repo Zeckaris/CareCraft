@@ -1,25 +1,27 @@
 import { Request, Response } from "express"
 import { Grade } from "../../models/grade.model"
+import { sendResponse } from "../../utils/sendResponse.util"
 
 
 export const createGrade= async (req:Request, res:Response):Promise<void> =>{
 
     const {level, description}= req.body
     if (!level){
-        res.status(400).json({message : "Missing required field"})
+        sendResponse(res, 400, false, "Missing required field")
+        return;
     }
     try{
         const grade= await Grade.findOne({level: level})
         if (grade){
-            res.status(400).json({message : "Grade already exists"})
+            sendResponse(res, 400, false, "Grade already exists")
             return
         }
 
         const newGrade = new Grade({level, description})
         await newGrade.save()
-        res.status(201).json({message : "Grade created successfully", data: newGrade})
+        sendResponse(res, 201, true, "Grade created successfully", newGrade)
     }catch(error){
-        res.status(500).json({message : "Internal server error", error})
+        sendResponse(res, 500, false, "Internal server error", null, error)
     }
 }
 
@@ -27,10 +29,10 @@ export const createGrade= async (req:Request, res:Response):Promise<void> =>{
 export const getAllGrades = async (req: Request, res: Response):Promise<void> =>{
     try{
         const grades = await Grade.find()
-        res.status(200).json({grades})
+        sendResponse(res, 200, true, "Grades fetched successfully", grades)
         return
     }catch(error){
-        res.status(500).json({message : "Internal server error", error})
+        sendResponse(res, 500, false, "Internal server error", null, error)
         return
     }
 }
@@ -38,20 +40,20 @@ export const getAllGrades = async (req: Request, res: Response):Promise<void> =>
 export const getGradeById= async (req:Request, res:Response):Promise<void> =>{
     const {id}= req.params
     if (!id){
-        res.status(400).json({message : "Missing required field"})
+        sendResponse(res, 400, false, "Missing required field")
         return
     }
 
     try{
         const grade= await Grade.findById(id)
         if (!grade){
-            res.status(404).json({message : "Grade not found"})
+             sendResponse(res, 404, false, "Grade not found")
             return
         }
-        res.status(200).json({grade})
+        sendResponse(res, 200, true, "Grade fetched successfully", grade)
         return
     }catch(error){
-        res.status(500).json({message : "Internal server error", error})
+        sendResponse(res, 500, false, "Internal server error", null, error)
         return
     }
 }
@@ -59,20 +61,20 @@ export const getGradeById= async (req:Request, res:Response):Promise<void> =>{
 export const deleteGrade= async (req:Request, res:Response):Promise<void> =>{
     const {id}= req.params
     if (!id){
-        res.status(400).json({message : "Missing required field"})
+        sendResponse(res, 400, false, "Missing required field")
         return
     }
 
     try{
         const grade= await Grade.findByIdAndDelete(id)
         if (!grade){
-            res.status(404).json({message : "Grade not found"})
+            sendResponse(res, 404, false, "Grade not found")
             return
         }
-        res.status(200).json({message : "Grade deleted successfully"})
+        sendResponse(res, 200, true, "Grade deleted successfully")
         return
     }catch(error){
-        res.status(500).json({message : "Internal server error", error})
+        sendResponse(res, 500, false, "Internal server error", null, error)
         return      
     }
 }
