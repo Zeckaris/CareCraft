@@ -3,6 +3,7 @@ import { InviteToken } from '../../models/inviteToken.model';
 import jwt from 'jsonwebtoken';
 import { createInviteTokenMiddleware } from '../../middlewares/createInviteToken.middleware'
 import { sendInviteEmail, validateEmail } from '../../utils/emailVerification.util';
+import { sendResponse } from '../../utils/sendResponse.util'
 
 const JWT_SECRET = process.env.JWT_SECRET_KEY || 'defaultsecret';
 
@@ -17,15 +18,17 @@ const isAdminOrCoordinator = (req: Request): boolean => {
 // Transformed createInviteToken in to middleware and sent it there to make creating and sending tokens streamlined
 
 
-export const sendInvite = async (req: Request, res: Response) => {
+export const sendInvite = async (req: Request, res: Response): Promise<void> => {
   const { targetEmail, role, tokenId } = req.body;
   
   if (!targetEmail || !role) {
-    return res.status(400).json({ message: 'targetEmail and role required.' });
+    sendResponse(res, 400, false, 'targetEmail and role required.')
+    return;
   }
 
   if (!validateEmail(targetEmail)) {
-    return res.status(400).json({ message: 'Invalid email format.' });
+    sendResponse(res, 400, false, 'Invalid email format.')
+    return;
   }
 
   try {
@@ -35,40 +38,56 @@ export const sendInvite = async (req: Request, res: Response) => {
       : (req as any).inviteToken;
 
     if (!tokenRecord) {
-      return res.status(404).json({ message: 'Token not found.' });
+      sendResponse(res, 404, false, 'Token not found.')
+      return;
     }
 
     await sendInviteEmail(targetEmail, tokenRecord.token, role);
     
-    res.status(200).json({ 
-      success: true, 
-      message: `${role} invite sent to ${targetEmail}!`,
+    sendResponse(res, 200, true, `${role} invite sent to ${targetEmail}!`, {
       tokenId: tokenRecord._id 
-    });
+    })
   } catch (error) {
-    res.status(500).json({ message: 'Failed to send invite.' });
+    sendResponse(res, 500, false, 'Failed to send invite.', null, error)
+    return;
   }
 };
 
 
 export const getInviteTokens = async (req: Request, res: Response) => {
     if (!isAdminOrCoordinator(req)) {
-        res.status(403).json({ message: 'Forbidden. Only admin or coordinator can view tokens.' });
+        sendResponse(res, 403, false, 'Forbidden. Only admin or coordinator can view tokens.')
         return;
     }
 
     try {
-        const tokens = await InviteToken.find().sort({ createdAt: -1 });
-        res.status(200).json({ tokens });
+
+      const page = parseInt(req.query.page as string) || 1;
+        let limit = parseInt(req.query.limit as string) || 10;
+        limit = Math.min(limit, 50); // Max 50 per page
+        const skip = (page - 1) * limit;
+
+        const total = await InviteToken.countDocuments();
+
+        const tokens = await InviteToken.find().sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        sendResponse(res, 200, true, 'Invite tokens fetched successfully.', tokens, null, {
+            total,
+            page,
+            limit
+        })
     } catch (error) {
-        res.status(500).json({ message: 'Server error fetching invite tokens.', error });
+        sendResponse(res, 500, false, 'Server error fetching invite tokens.', null, error)
+        return;
     }
 };
 
 
 export const deleteInviteToken = async (req: Request, res: Response) => {
     if (!isAdminOrCoordinator(req)) {
-        res.status(403).json({ message: 'Forbidden. Only admin or coordinator can delete tokens.' });
+        sendResponse(res, 403, false, 'Forbidden. Only admin or coordinator can delete tokens.')
         return;
     }
 
@@ -77,11 +96,12 @@ export const deleteInviteToken = async (req: Request, res: Response) => {
     try {
         const token = await InviteToken.findByIdAndDelete(id);
         if (!token) {
-            res.status(404).json({ message: 'Invite token not found.' });
+            sendResponse(res, 404, false, 'Invite token not found.')
             return;
         }
-        res.status(200).json({ message: 'Invite token deleted successfully.' });
+        sendResponse(res, 200, true, 'Invite token deleted successfully.')
     } catch (error) {
-        res.status(500).json({ message: 'Server error deleting invite token.', error });
+        sendResponse(res, 500, false, 'Server error deleting invite token.', null, error)
+        return;
     }
 };
