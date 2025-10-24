@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { Student } from '../../models/student.model'
 import mongoose from 'mongoose'
 import { StudentEnrollment } from '../../models/studentEnrollment.model'
+import { sendResponse } from '../../utils/sendResponse.util' 
 
 
 
@@ -16,7 +17,7 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
   } = req.body
 
   if (!firstName || !lastName || !gender || !dateOfBirth) {
-    res.status(400).json({ message: 'Missing required fields.' })
+    sendResponse(res, 400, false, 'Missing required fields.')
     return
   }
 
@@ -33,22 +34,36 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
       profileImage,
     })
 
-    res.status(201).json({
-      message: 'Student created successfully.',
-      student: newStudent,
-    })
+    sendResponse(res, 201, true, 'Student created successfully.', newStudent)
   } catch (error) {
-    res.status(500).json({ message: 'Error creating student.', error })
+    sendResponse(res, 500, false, 'Error creating student.', null, error)
+    return;
   }
 }
 
 
-export const getAllStudents = async (_req: Request, res: Response): Promise<void> => {
+export const getAllStudents = async (req: Request, res: Response): Promise<void> => {
   try {
-    const students = await Student.find().populate('enrollmentId').populate('parentId')
-    res.status(200).json({ students })
+    const page = parseInt(req.query.page as string) || 1
+    let limit = parseInt(req.query.limit as string) || 10
+    limit = Math.min(limit, 50) // Max 50 per page
+    const skip = (page - 1) * limit
+
+    const total = await Student.countDocuments()
+
+    const students = await Student.find()
+      .populate('enrollmentId', 'gradeId schoolYear isActive')
+      .populate('parentId', 'firstName lastName email phoneNumber')
+      .skip(skip)
+      .limit(limit)
+    
+    sendResponse(res, 200, true, 'Students fetched successfully.', students, null, {
+      total,
+      page,
+      limit
+    })
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching students.', error })
+    sendResponse(res, 500, false, 'Error fetching students.', null, error)
   }
 }
 
@@ -57,19 +72,22 @@ export const getStudentById = async (req: Request, res: Response): Promise<void>
   const { id } = req.params
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    res.status(400).json({ message: 'Invalid student ID.' })
+    sendResponse(res, 400, false, 'Invalid student ID.')
     return
   }
 
   try {
-    const student = await Student.findById(id).populate('enrollmentId').populate('parentId')
+    const student = await Student.findById(id)
+      .populate('enrollmentId', 'gradeId schoolYear isActive')
+      .populate('parentId', 'firstName lastName email phoneNumber')
     if (!student) {
-      res.status(404).json({ message: 'Student not found.' })
+      sendResponse(res, 404, false, 'Student not found.')
       return
     }
-    res.status(200).json({ student })
+    sendResponse(res, 200, true, 'Student fetched successfully.', student)
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching student.', error })
+    sendResponse(res, 500, false, 'Error fetching student.', null, error)
+    return;
   }
 }
 
@@ -78,19 +96,20 @@ export const updateStudent = async (req: Request, res: Response): Promise<void> 
   const { id } = req.params
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    res.status(400).json({ message: 'Invalid student ID.' })
+    sendResponse(res, 400, false, 'Invalid student ID.')
     return
   }
 
   try {
     const updatedStudent = await Student.findByIdAndUpdate(id, req.body, { new: true, runValidators: true })
     if (!updatedStudent) {
-      res.status(404).json({ message: 'Student not found.' })
+      sendResponse(res, 404, false, 'Student not found.')
       return
     }
-    res.status(200).json({ message: 'Student updated successfully.', student: updatedStudent })
+    sendResponse(res, 200, true, 'Student updated successfully.', updatedStudent)
   } catch (error) {
-    res.status(500).json({ message: 'Error updating student.', error })
+    sendResponse(res, 500, false, 'Error updating student.', null, error)
+    return;
   }
 }
 
@@ -99,19 +118,20 @@ export const deleteStudent = async (req: Request, res: Response): Promise<void> 
   const { id } = req.params
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    res.status(400).json({ message: 'Invalid student ID.' })
+    sendResponse(res, 400, false, 'Invalid student ID.')
     return
   }
 
   try {
     const deletedStudent = await Student.findByIdAndDelete(id)
     if (!deletedStudent) {
-      res.status(404).json({ message: 'Student not found.' })
+      sendResponse(res, 404, false, 'Student not found.')
       return
     }
-    res.status(200).json({ message: 'Student deleted successfully.' })
+    sendResponse(res, 200, true, 'Student deleted successfully.')
   } catch (error) {
-    res.status(500).json({ message: 'Error deleting student.', error })
+     sendResponse(res, 500, false, 'Error deleting student.', null, error)
+     return;
   }
 }
 
@@ -120,18 +140,32 @@ export const getStudentsByGrade = async (req: Request, res: Response): Promise<v
     const { gradeId } = req.params
     
     if (!gradeId) {
-        res.status(400).json({ message: "Missing: gradeId" })
+        sendResponse(res, 400, false, 'Missing: gradeId')
         return
     }
 
     try {
+
+      const page = parseInt(req.query.page as string) || 1
+      let limit = parseInt(req.query.limit as string) || 10
+      limit = Math.min(limit, 50) // Max 50 per page
+      const skip = (page - 1) * limit
+
+      const total = await StudentEnrollment.countDocuments({ 
+        gradeId, 
+        isActive: true 
+      })
+
+
         const enrollments = await StudentEnrollment.find({ 
             gradeId, 
             isActive: true 
-        }).populate('studentId') 
+        }).populate('studentId', 'firstName lastName gender profileImage')
+          .skip(skip)
+          .limit(limit)
 
         if (enrollments.length === 0) {
-            res.status(400).json({ message: "No active students found" })
+            sendResponse(res, 404, false, 'No active students found.')
             return
         }
 
@@ -140,11 +174,14 @@ export const getStudentsByGrade = async (req: Request, res: Response): Promise<v
             name: `${(en.studentId as any)?.firstName || ''} ${(en.studentId as any)?.lastName || ''}`.trim()
         }))
 
-        res.status(200).json({ 
-            students, 
-            count: students.length 
+       sendResponse(res, 200, true, 'Students fetched successfully.', students, null, {
+          total,
+          page,
+          limit
         })
+
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, 'Internal server error', null, error)
+        return;
     }
 }

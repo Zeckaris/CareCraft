@@ -1,4 +1,3 @@
-// src/middlewares/templateOwnership.middleware.ts
 import { Request, Response, NextFunction } from 'express';
 import { Types } from 'mongoose';
 import { SharedPlanTemplate } from '../models/sharedPlanTemplate.model';
