@@ -3,6 +3,7 @@ import { Student } from '../../models/student.model';
 import { parseAndCleanStudentExcel } from '../../utils/parseAndCleanStudentExcel.utility';
 import multer from 'multer';
 import { extname } from 'path';
+import { sendResponse } from '../../utils/sendResponse.util'; 
 
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -22,15 +23,15 @@ const upload = multer({
 export const batchCreateStudents = async (req: Request, res: Response): Promise<void> => {
   upload(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
-      res.status(400).json({ message: `Upload error: ${err.message}` });
+      sendResponse(res, 400, false, `Upload error: ${err.message}`)
       return;
     } else if (err) {
-      res.status(400).json({ message: err.message });
+      sendResponse(res, 400, false, err.message)
       return;
     }
 
     if (!req.file) {
-      res.status(400).json({ message: 'No file uploaded.' });
+      sendResponse(res, 400, false, 'No file uploaded.')
       return;
     }
 
@@ -38,32 +39,27 @@ export const batchCreateStudents = async (req: Request, res: Response): Promise<
       const { validStudents, errors, warnings } = await parseAndCleanStudentExcel(req.file.buffer, Student);
 
       if (validStudents.length === 0 && errors.length > 0) {
-        res.status(400).json({
-          message: 'No valid students to process.',
+        sendResponse(res, 400, false, 'No valid students to process.', {
           successful: 0,
           failed: errors.length,
           errors,
           warnings,
           students: [],
-        });
+        })
         return;
       }
 
       const insertedStudents = await Student.insertMany(validStudents, { ordered: false });
 
-      res.status(201).json({
-        message: 'Batch creation completed.',
+      sendResponse(res, 201, true, 'Batch creation completed.', {
         successful: insertedStudents.length,
         failed: errors.length,
         errors,
         warnings,
         students: insertedStudents.map((student) => ({ _id: student._id })),
-      });
+      })
     } catch (error) {
-      res.status(500).json({
-        message: 'Error processing batch creation.',
-        error: (error as Error).message,
-      });
+      sendResponse(res, 500, false, 'Error processing batch creation.', null, error)
     }
   });
 };
