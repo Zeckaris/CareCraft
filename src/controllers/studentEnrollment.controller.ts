@@ -2,9 +2,7 @@ import { Request, Response } from 'express';
 import { StudentEnrollment } from '../models/studentEnrollment.model';
 import { Student } from '../models/student.model';
 import mongoose from 'mongoose';
-
-
-
+import { sendResponse } from '../utils/sendResponse.util';
 
 const getCurrentSchoolYear = (): string => {
   const now = new Date()
@@ -12,7 +10,6 @@ const getCurrentSchoolYear = (): string => {
   const year = now.getFullYear()
   return month >= 6 ? `${year}-${year + 1}` : `${year - 1}-${year}`
 }
-
 
 export const getAllEnrollments = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, schoolYear, isActive } = req.query;
@@ -29,17 +26,13 @@ export const getAllEnrollments = async (req: Request, res: Response): Promise<vo
       .limit(Number(limit));
     const total = await StudentEnrollment.countDocuments(filter);
 
-    res.status(200).json({ 
-      data: enrollments, 
-      pagination: { 
-        page: Number(page), 
-        limit: Number(limit), 
-        total, 
-        pages: Math.ceil(total / Number(limit)) 
-      } 
+    sendResponse(res, 200, true, 'Enrollments fetched successfully', enrollments, null, {
+      total,
+      page: Number(page),
+      limit: Number(limit)
     });
   } catch (error) {
-    res.status(500).json({ message: 'Server error fetching enrollments.', error });
+    sendResponse(res, 500, false, 'Server error fetching enrollments.', null, error);
   }
 };
 
@@ -48,7 +41,7 @@ export const getStudentEnrollments = async (req: Request, res: Response): Promis
   const { schoolYear, isActive } = req.query;
 
   if (!mongoose.isValidObjectId(studentId)) {
-    res.status(400).json({ message: 'Invalid studentId' });
+    sendResponse(res, 400, false, 'Invalid studentId');
     return;
   }
 
@@ -58,9 +51,12 @@ export const getStudentEnrollments = async (req: Request, res: Response): Promis
 
   try {
     const enrollments = await StudentEnrollment.find(filter).sort({ schoolYear: -1 });
-    res.status(200).json({ data: enrollments, count: enrollments.length });
+    sendResponse(res, 200, true, 'Student enrollments fetched successfully', {
+      enrollments,
+      count: enrollments.length
+    });
   } catch (error) {
-    res.status(500).json({ message: 'Server error fetching student enrollments.', error });
+    sendResponse(res, 500, false, 'Server error fetching student enrollments.', null, error);
   }
 };
 
@@ -68,27 +64,28 @@ export const getEnrollmentById = async (req: Request, res: Response): Promise<vo
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid enrollment ID' });
+    sendResponse(res, 400, false, 'Invalid enrollment ID');
     return;
   }
 
   try {
     const enrollment = await StudentEnrollment.findById(id);
     if (!enrollment) {
-      res.status(404).json({ message: 'Enrollment not found.' });
+      sendResponse(res, 404, false, 'Enrollment not found.');
       return;
     }
-    res.status(200).json({ data: enrollment });
+    sendResponse(res, 200, true, 'Enrollment fetched successfully', enrollment);
   } catch (error) {
-    res.status(500).json({ message: 'Server error fetching enrollment.', error });
+    sendResponse(res, 500, false, 'Server error fetching enrollment.', null, error);
   }
 };
+
 
 export const createEnrollment = async (req: Request, res: Response): Promise<void> => {
   const { studentId, gradeId, schoolYear: providedYear } = req.body;
 
   if (!mongoose.isValidObjectId(studentId) || !mongoose.isValidObjectId(gradeId)) {
-    res.status(400).json({ message: 'Invalid studentId or gradeId' });
+    sendResponse(res, 400, false, 'Invalid studentId or gradeId');
     return;
   }
 
@@ -97,22 +94,22 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
   try {
     const existing = await StudentEnrollment.findOne({ studentId, schoolYear, isActive: true });
     if (existing) {
-      res.status(400).json({ message: `Student already has active enrollment for ${schoolYear}` });
+      sendResponse(res, 400, false, `Student already has active enrollment for ${schoolYear}`);
       return;
     }
 
     const student = await Student.findById(studentId);
     if (!student) {
-      res.status(404).json({ message: 'Student not found.' });
+      sendResponse(res, 404, false, 'Student not found.');
       return;
     }
 
     const enrollment = await StudentEnrollment.create({ studentId, gradeId, schoolYear, isActive: true });
     await Student.findByIdAndUpdate(studentId, { enrollmentId: enrollment._id });
 
-    res.status(201).json({ message: 'Enrollment created successfully.', data: enrollment });
+    sendResponse(res, 201, true, 'Enrollment created successfully.', enrollment);
   } catch (error) {
-    res.status(500).json({ message: 'Server error creating enrollment.', error });
+    sendResponse(res, 500, false, 'Server error creating enrollment.', null, error);
   }
 };
 
@@ -121,18 +118,18 @@ export const updateEnrollment = async (req: Request, res: Response): Promise<voi
   const { gradeId, schoolYear: providedYear, isActive } = req.body;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid enrollment ID' });
+    sendResponse(res, 400, false, 'Invalid enrollment ID');
     return;
   }
   if (gradeId && !mongoose.isValidObjectId(gradeId)) {
-    res.status(400).json({ message: 'Invalid gradeId' });
+    sendResponse(res, 400, false, 'Invalid gradeId');
     return;
   }
 
   try {
     const enrollment = await StudentEnrollment.findById(id);
     if (!enrollment) {
-      res.status(404).json({ message: 'Enrollment not found.' });
+      sendResponse(res, 404, false, 'Enrollment not found.');
       return;
     }
 
@@ -149,9 +146,9 @@ export const updateEnrollment = async (req: Request, res: Response): Promise<voi
     if (isActive !== undefined) updateData.isActive = isActive;
 
     const updated = await StudentEnrollment.findByIdAndUpdate(id, updateData, { new: true });
-    res.status(200).json({ message: 'Enrollment updated successfully.', data: updated });
+    sendResponse(res, 200, true, 'Enrollment updated successfully.', updated);
   } catch (error) {
-    res.status(500).json({ message: 'Server error updating enrollment.', error });
+    sendResponse(res, 500, false, 'Server error updating enrollment.', null, error);
   }
 };
 
@@ -159,14 +156,14 @@ export const toggleEnrollmentActive = async (req: Request, res: Response): Promi
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid enrollment ID' });
+    sendResponse(res, 400, false, 'Invalid enrollment ID');
     return;
   }
 
   try {
     const enrollment = await StudentEnrollment.findById(id);
     if (!enrollment) {
-      res.status(404).json({ message: 'Enrollment not found.' });
+      sendResponse(res, 404, false, 'Enrollment not found.');
       return;
     }
 
@@ -179,12 +176,9 @@ export const toggleEnrollmentActive = async (req: Request, res: Response): Promi
     }
 
     const updated = await StudentEnrollment.findByIdAndUpdate(id, { isActive: newStatus }, { new: true });
-    res.status(200).json({ 
-      message: `Enrollment ${newStatus ? 'activated' : 'deactivated'} successfully.`, 
-      data: updated 
-    });
+    sendResponse(res, 200, true, `Enrollment ${newStatus ? 'activated' : 'deactivated'} successfully.`, updated);
   } catch (error) {
-    res.status(500).json({ message: 'Server error toggling enrollment.', error });
+    sendResponse(res, 500, false, 'Server error toggling enrollment.', null, error);
   }
 };
 
@@ -192,23 +186,23 @@ export const deleteEnrollment = async (req: Request, res: Response): Promise<voi
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid enrollment ID' });
+    sendResponse(res, 400, false, 'Invalid enrollment ID');
     return;
   }
 
   try {
     const enrollment = await StudentEnrollment.findById(id);
     if (!enrollment) {
-      res.status(404).json({ message: 'Enrollment not found.' });
+      sendResponse(res, 404, false, 'Enrollment not found.');
       return;
     }
 
     await Student.findByIdAndUpdate(enrollment.studentId, { enrollmentId: null });
     await StudentEnrollment.findByIdAndDelete(id);
 
-    res.status(200).json({ message: 'Enrollment deleted successfully.' });
+    sendResponse(res, 200, true, 'Enrollment deleted successfully.');
   } catch (error) {
-    res.status(500).json({ message: 'Server error deleting enrollment.', error });
+    sendResponse(res, 500, false, 'Server error deleting enrollment.', null, error);
   }
 };
 
@@ -217,7 +211,7 @@ export const getGradeEnrollments = async (req: Request, res: Response): Promise<
   const { schoolYear, isActive = 'true' } = req.query;
 
   if (!mongoose.isValidObjectId(gradeId)) {
-    res.status(400).json({ message: 'Invalid gradeId' });
+    sendResponse(res, 400, false, 'Invalid gradeId');
     return;
   }
 
@@ -226,9 +220,12 @@ export const getGradeEnrollments = async (req: Request, res: Response): Promise<
 
   try {
     const enrollments = await StudentEnrollment.find(filter).sort({ createdAt: -1 });
-    res.status(200).json({ data: enrollments, count: enrollments.length });
+    sendResponse(res, 200, true, 'Grade enrollments fetched successfully', {
+      enrollments,
+      count: enrollments.length
+    });
   } catch (error) {
-    res.status(500).json({ message: 'Server error fetching grade enrollments.', error });
+    sendResponse(res, 500, false, 'Server error fetching grade enrollments.', null, error);
   }
 };
 
@@ -236,7 +233,7 @@ export const bulkCreateEnrollments = async (req: Request, res: Response): Promis
   const { studentIds, gradeId, schoolYear: providedYear } = req.body;
 
   if (!Array.isArray(studentIds) || !mongoose.isValidObjectId(gradeId)) {
-    res.status(400).json({ message: 'Invalid studentIds array or gradeId' });
+    sendResponse(res, 400, false, 'Invalid studentIds array or gradeId');
     return;
   }
 
@@ -266,16 +263,13 @@ export const bulkCreateEnrollments = async (req: Request, res: Response): Promis
       successCount += results.filter(Boolean).length;
     }
 
-    res.status(201).json({ 
-      message: `Bulk enrollment completed: ${successCount} successful`,
-      data: { 
-        successCount, 
-        failedCount: studentIds.length - successCount, 
-        total: studentIds.length, 
-        errors: errors.slice(0, 10) 
-      }
+    sendResponse(res, 201, true, `Bulk enrollment completed: ${successCount} successful`, {
+      successCount, 
+      failedCount: studentIds.length - successCount, 
+      total: studentIds.length, 
+      errors: errors.slice(0, 10)
     });
   } catch (error) {
-    res.status(500).json({ message: 'Server error in bulk enrollment.', error });
+    sendResponse(res, 500, false, 'Server error in bulk enrollment.', null, error);
   }
 };
