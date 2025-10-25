@@ -6,7 +6,7 @@ import { StudentBadge } from '../models/studentBadge.model';
 import { AttributeCategory } from '../models/attributeCategory.model';
 import { ActionPlan } from '../models/actionPlan.model';
 import  UserAccount  from '../models/userAccount.model';
-
+import { sendResponse } from '../utils/sendResponse.util';
 export const getAllBadgeDefinitions = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, name, level, attributeCategoryId } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
@@ -16,12 +16,12 @@ export const getAllBadgeDefinitions = async (req: Request, res: Response): Promi
   if (level) filter.level = Number(level);
   if (attributeCategoryId) {
     if (!mongoose.isValidObjectId(attributeCategoryId)) {
-      res.status(400).json({ message: 'Invalid attributeCategoryId' });
+      sendResponse(res, 400, false, 'Invalid attributeCategoryId');
       return;
     }
     const attributeCategory = await AttributeCategory.findById(attributeCategoryId);
     if (!attributeCategory) {
-      res.status(404).json({ message: 'AttributeCategory not found' });
+      sendResponse(res, 404, false, 'AttributeCategory not found');
       return;
     }
     const criteria = await BadgeCriteria.find({ attributeCategoryId }).select('badgeDefinitionId').lean();
@@ -30,21 +30,19 @@ export const getAllBadgeDefinitions = async (req: Request, res: Response): Promi
 
   try {
     const badges = await BadgeDefinition.find(filter)
-      .populate('criteria')
+      .populate('criteria', 'type attributeCategoryId minScore actionPlanId minProgress minObservations scope')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit));
     const total = await BadgeDefinition.countDocuments(filter);
 
-    res.status(200).json({
-      data: badges,
-      page: Number(page),
-      limit: Number(limit),
+    sendResponse(res, 200, true, 'Badge definitions fetched successfully', badges, null, {
       total,
-      pages: Math.ceil(total / Number(limit))
+      page: Number(page),
+      limit: Number(limit)
     });
   } catch (error) {
-    res.status(500).json({ message: `Server error fetching badge definitions: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error fetching badge definitions: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -52,19 +50,20 @@ export const getBadgeDefinitionById = async (req: Request, res: Response): Promi
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid badge definition ID' });
+    sendResponse(res, 400, false, 'Invalid badge definition ID');
     return;
   }
 
   try {
-    const badge = await BadgeDefinition.findById(id).populate('criteria');
+    const badge = await BadgeDefinition.findById(id)
+      .populate('criteria', 'type attributeCategoryId minScore actionPlanId minProgress minObservations scope');
     if (!badge) {
-      res.status(404).json({ message: 'BadgeDefinition not found' });
+      sendResponse(res, 404, false, 'BadgeDefinition not found');
       return;
     }
-    res.status(200).json({ data: badge });
+    sendResponse(res, 200, true, 'Badge definition fetched successfully', badge);
   } catch (error) {
-    res.status(500).json({ message: `Server error fetching badge definition: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error fetching badge definition: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -78,49 +77,49 @@ export const createBadgeDefinition = async (req: Request, res: Response): Promis
 
   // Validate required fields and formats
   if (!name || !description || !createdBy || !level) {
-    res.status(400).json({ message: 'Missing required fields: name, description, createdBy, or level' });
+    sendResponse(res, 400, false, 'Missing required fields: name, description, createdBy, or level');
     return;
   }
   if (!mongoose.isValidObjectId(createdBy)) {
-    res.status(400).json({ message: 'Invalid createdBy ID' });
+    sendResponse(res, 400, false, 'Invalid createdBy ID');
     return;
   }
   if (criteria && !criteria.every((id: string) => mongoose.isValidObjectId(id))) {
-    res.status(400).json({ message: 'Invalid criteria ID(s)' });
+    sendResponse(res, 400, false, 'Invalid criteria ID(s)');
     return;
   }
   if (name.length > 100) {
-    res.status(400).json({ message: 'Name must be 100 characters or less' });
+    sendResponse(res, 400, false, 'Name must be 100 characters or less');
     return;
   }
 
   try {
     const user = await UserAccount.findById(createdBy);
     if (!user || !['admin', 'coordinator', 'teacher'].includes(user.role)) {
-      res.status(400).json({ message: 'Invalid createdBy: User does not exist or lacks required role (admin, coordinator, teacher)' });
+      sendResponse(res, 400, false, 'Invalid createdBy: User does not exist or lacks required role (admin, coordinator, teacher)');
       return;
     }
 
     // Check for duplicate badge
     const existingBadge = await BadgeDefinition.findOne({ name, level });
     if (existingBadge) {
-      res.status(400).json({ message: 'Badge definition with this name and level already exists' });
+      sendResponse(res, 400, false, 'Badge definition with this name and level already exists');
       return;
     }
 
     if (criteria && criteria.length > 0) {
       const validCriteria = await BadgeCriteria.find({ _id: { $in: criteria } });
       if (validCriteria.length !== criteria.length) {
-        res.status(400).json({ message: 'One or more criteria IDs are invalid' });
+        sendResponse(res, 400, false, 'One or more criteria IDs are invalid');
         return;
       }
       for (const crit of validCriteria) {
         if (crit.attributeCategoryId && !(await AttributeCategory.findById(crit.attributeCategoryId))) {
-          res.status(400).json({ message: `Invalid attributeCategoryId in criteria: ${crit._id}` });
+          sendResponse(res, 400, false, `Invalid attributeCategoryId in criteria: ${crit._id}`);
           return;
         }
         if (crit.actionPlanId && !(await ActionPlan.findById(crit.actionPlanId))) {
-          res.status(400).json({ message: `Invalid actionPlanId in criteria: ${crit._id}` });
+          sendResponse(res, 400, false, `Invalid actionPlanId in criteria: ${crit._id}`);
           return;
         }
       }
@@ -135,7 +134,6 @@ export const createBadgeDefinition = async (req: Request, res: Response): Promis
       criteria: criteria || []
     });
 
-
     if (criteria && criteria.length > 0) {
       await BadgeCriteria.updateMany(
         { _id: { $in: criteria } },
@@ -143,9 +141,9 @@ export const createBadgeDefinition = async (req: Request, res: Response): Promis
       );
     }
 
-    res.status(201).json({ message: 'Badge definition created successfully', data: badge });
+    sendResponse(res, 201, true, 'Badge definition created successfully', badge);
   } catch (error) {
-    res.status(500).json({ message: `Server error creating badge definition: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error creating badge definition: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -160,30 +158,30 @@ export const updateBadgeDefinition = async (req: Request, res: Response): Promis
 
   // Validate inputs
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid badge definition ID' });
+    sendResponse(res, 400, false, 'Invalid badge definition ID');
     return;
   }
   if (!name && !description && icon === undefined && level === undefined && !criteria && !createdBy) {
-    res.status(400).json({ message: 'At least one field (name, description, icon, level, criteria, createdBy) required' });
+    sendResponse(res, 400, false, 'At least one field (name, description, icon, level, criteria, createdBy) required');
     return;
   }
   if (createdBy && !mongoose.isValidObjectId(createdBy)) {
-    res.status(400).json({ message: 'Invalid createdBy ID' });
+    sendResponse(res, 400, false, 'Invalid createdBy ID');
     return;
   }
   if (criteria && !criteria.every((id: string) => mongoose.isValidObjectId(id))) {
-    res.status(400).json({ message: 'Invalid criteria ID(s)' });
+    sendResponse(res, 400, false, 'Invalid criteria ID(s)');
     return;
   }
   if (name && name.length > 100) {
-    res.status(400).json({ message: 'Name must be 100 characters or less' });
+    sendResponse(res, 400, false, 'Name must be 100 characters or less');
     return;
   }
 
   try {
     const badge = await BadgeDefinition.findById(id);
     if (!badge) {
-      res.status(404).json({ message: 'BadgeDefinition not found' });
+      sendResponse(res, 404, false, 'BadgeDefinition not found');
       return;
     }
 
@@ -191,7 +189,7 @@ export const updateBadgeDefinition = async (req: Request, res: Response): Promis
     if (createdBy) {
       const user = await UserAccount.findById(createdBy);
       if (!user || !['admin', 'coordinator', 'teacher'].includes(user.role)) {
-        res.status(400).json({ message: 'Invalid createdBy: User does not exist or lacks required role (admin, coordinator, teacher)' });
+        sendResponse(res, 400, false, 'Invalid createdBy: User does not exist or lacks required role (admin, coordinator, teacher)');
         return;
       }
     }
@@ -200,7 +198,7 @@ export const updateBadgeDefinition = async (req: Request, res: Response): Promis
     if (name && level && (name !== badge.name || level !== badge.level)) {
       const existingBadge = await BadgeDefinition.findOne({ name, level });
       if (existingBadge) {
-        res.status(400).json({ message: 'Badge definition with this name and level already exists' });
+        sendResponse(res, 400, false, 'Badge definition with this name and level already exists');
         return;
       }
     }
@@ -209,20 +207,20 @@ export const updateBadgeDefinition = async (req: Request, res: Response): Promis
     if (criteria && criteria.length > 0) {
       const validCriteria = await BadgeCriteria.find({ _id: { $in: criteria } });
       if (validCriteria.length !== criteria.length) {
-        res.status(400).json({ message: 'One or more criteria IDs are invalid' });
+        sendResponse(res, 400, false, 'One or more criteria IDs are invalid');
         return;
       }
       for (const crit of validCriteria) {
         if (crit.attributeCategoryId && !(await AttributeCategory.findById(crit.attributeCategoryId))) {
-          res.status(400).json({ message: `Invalid attributeCategoryId in criteria: ${crit._id}` });
+          sendResponse(res, 400, false, `Invalid attributeCategoryId in criteria: ${crit._id}`);
           return;
         }
         if (crit.actionPlanId && !(await ActionPlan.findById(crit.actionPlanId))) {
-          res.status(400).json({ message: `Invalid actionPlanId in criteria: ${crit._id}` });
+          sendResponse(res, 400, false, `Invalid actionPlanId in criteria: ${crit._id}`);
           return;
         }
         if (!crit.badgeDefinitionId.equals(id)) {
-          res.status(400).json({ message: `Criteria ${crit._id} does not belong to this badge definition` });
+          sendResponse(res, 400, false, `Criteria ${crit._id} does not belong to this badge definition`);
           return;
         }
       }
@@ -236,10 +234,11 @@ export const updateBadgeDefinition = async (req: Request, res: Response): Promis
     if (criteria) updateData.criteria = criteria;
     if (createdBy) updateData.createdBy = createdBy;
 
-    const updated = await BadgeDefinition.findByIdAndUpdate(id, updateData, { new: true }).populate('criteria');
-    res.status(200).json({ message: 'Badge definition updated successfully', data: updated });
+    const updated = await BadgeDefinition.findByIdAndUpdate(id, updateData, { new: true })
+      .populate('criteria', 'type attributeCategoryId minScore actionPlanId minProgress minObservations scope');
+    sendResponse(res, 200, true, 'Badge definition updated successfully', updated);
   } catch (error) {
-    res.status(500).json({ message: `Server error updating badge definition: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error updating badge definition: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -247,14 +246,14 @@ export const deleteBadgeDefinition = async (req: Request, res: Response): Promis
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid badge definition ID' });
+    sendResponse(res, 400, false, 'Invalid badge definition ID');
     return;
   }
 
   try {
     const badge = await BadgeDefinition.findById(id);
     if (!badge) {
-      res.status(404).json({ message: 'BadgeDefinition not found' });
+      sendResponse(res, 404, false, 'BadgeDefinition not found');
       return;
     }
 
@@ -264,13 +263,13 @@ export const deleteBadgeDefinition = async (req: Request, res: Response): Promis
     if (studentBadgeCount > 0) dependencies.push(`${studentBadgeCount} student badge(s)`);
     if (criteriaCount > 0) dependencies.push(`${criteriaCount} badge criteria`);
     if (dependencies.length > 0) {
-      res.status(400).json({ message: `Cannot delete badge definition; it is used by: ${dependencies.join(', ')}` });
+      sendResponse(res, 400, false, `Cannot delete badge definition; it is used by: ${dependencies.join(', ')}`);
       return;
     }
 
     await BadgeDefinition.findByIdAndDelete(id);
-    res.status(200).json({ message: 'Badge definition deleted successfully' });
+    sendResponse(res, 200, true, 'Badge definition deleted successfully');
   } catch (error) {
-    res.status(500).json({ message: `Server error deleting badge definition: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error deleting badge definition: ${(error as Error).message}`, null, error);
   }
 };
