@@ -5,6 +5,7 @@ import { BadgeDefinition } from '../models/badgeDefinition.model';
 import { AttributeCategory } from '../models/attributeCategory.model';
 import { ActionPlan } from '../models/actionPlan.model';
 import { StudentBadge } from '../models/studentBadge.model';
+import { sendResponse } from '../utils/sendResponse.util'
 
 export const getAllBadgeCriteria = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, badgeDefinitionId, type, attributeCategoryId } = req.query;
@@ -13,31 +14,31 @@ export const getAllBadgeCriteria = async (req: Request, res: Response): Promise<
   const filter: any = {};
   if (badgeDefinitionId) {
     if (!mongoose.isValidObjectId(badgeDefinitionId)) {
-      res.status(400).json({ message: 'Invalid badgeDefinitionId' });
+      sendResponse(res, 400, false, 'Invalid badgeDefinitionId');
       return;
     }
     const badgeDefinition = await BadgeDefinition.findById(badgeDefinitionId);
     if (!badgeDefinition) {
-      res.status(404).json({ message: 'BadgeDefinition not found' });
+      sendResponse(res, 404, false, 'BadgeDefinition not found');
       return;
     }
     filter.badgeDefinitionId = badgeDefinitionId;
   }
   if (type) {
     if (typeof type !== 'string' || !['scoreThreshold', 'actionPlanProgress', 'observationCount', 'custom', 'attributeEvaluationAverage'].includes(type)) {
-      res.status(400).json({ message: 'Invalid type: must be scoreThreshold, actionPlanProgress, observationCount, custom, or attributeEvaluationAverage' });
+      sendResponse(res, 400, false, 'Invalid type: must be scoreThreshold, actionPlanProgress, observationCount, custom, or attributeEvaluationAverage');
       return;
     }
     filter.type = type;
   }
   if (attributeCategoryId) {
     if (!mongoose.isValidObjectId(attributeCategoryId)) {
-      res.status(400).json({ message: 'Invalid attributeCategoryId' });
+      sendResponse(res, 400, false, 'Invalid attributeCategoryId');
       return;
     }
     const attributeCategory = await AttributeCategory.findById(attributeCategoryId);
     if (!attributeCategory) {
-      res.status(404).json({ message: 'AttributeCategory not found' });
+      sendResponse(res, 404, false, 'AttributeCategory not found');
       return;
     }
     filter.attributeCategoryId = attributeCategoryId;
@@ -51,15 +52,13 @@ export const getAllBadgeCriteria = async (req: Request, res: Response): Promise<
       .lean();
     const total = await BadgeCriteria.countDocuments(filter);
 
-    res.status(200).json({
-      data: criteria,
-      page: Number(page),
-      limit: Number(limit),
+    sendResponse(res, 200, true, 'Badge criteria fetched successfully', criteria, null, {
       total,
-      pages: Math.ceil(total / Number(limit))
+      page: Number(page),
+      limit: Number(limit)
     });
   } catch (error) {
-    res.status(500).json({ message: `Server error fetching badge criteria: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error fetching badge criteria: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -67,21 +66,22 @@ export const getBadgeCriteriaById = async (req: Request, res: Response): Promise
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid badge criteria ID' });
+    sendResponse(res, 400, false, 'Invalid badge criteria ID');
     return;
   }
 
   try {
     const criteria = await BadgeCriteria.findById(id).lean();
     if (!criteria) {
-      res.status(404).json({ message: 'BadgeCriteria not found' });
+      sendResponse(res, 404, false, 'BadgeCriteria not found');
       return;
     }
-    res.status(200).json({ data: criteria });
+    sendResponse(res, 200, true, 'Badge criteria fetched successfully', criteria);
   } catch (error) {
-    res.status(500).json({ message: `Server error fetching badge criteria: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error fetching badge criteria: ${(error as Error).message}`, null, error);
   }
 };
+
 
 export const createBadgeCriteria = async (req: Request, res: Response): Promise<void> => {
   let { badgeDefinitionId, type, attributeCategoryId, minScore, actionPlanId, minProgress, minObservations, scope, description } = req.body;
@@ -89,35 +89,35 @@ export const createBadgeCriteria = async (req: Request, res: Response): Promise<
   description = description?.trim();
 
   if (!badgeDefinitionId || !type) {
-    res.status(400).json({ message: 'Missing required fields: badgeDefinitionId or type' });
+    sendResponse(res, 400, false, 'Missing required fields: badgeDefinitionId or type');
     return;
   }
   if (!mongoose.isValidObjectId(badgeDefinitionId)) {
-    res.status(400).json({ message: 'Invalid badgeDefinitionId' });
+    sendResponse(res, 400, false, 'Invalid badgeDefinitionId');
     return;
   }
   if (!['scoreThreshold', 'actionPlanProgress', 'observationCount', 'custom', 'attributeEvaluationAverage'].includes(type)) {
-    res.status(400).json({ message: 'Invalid type: must be scoreThreshold, actionPlanProgress, observationCount, custom, or attributeEvaluationAverage' });
+    sendResponse(res, 400, false, 'Invalid type: must be scoreThreshold, actionPlanProgress, observationCount, custom, or attributeEvaluationAverage');
     return;
   }
   if (attributeCategoryId && !mongoose.isValidObjectId(attributeCategoryId)) {
-    res.status(400).json({ message: 'Invalid attributeCategoryId' });
+    sendResponse(res, 400, false, 'Invalid attributeCategoryId');
     return;
   }
   if (actionPlanId && !mongoose.isValidObjectId(actionPlanId)) {
-    res.status(400).json({ message: 'Invalid actionPlanId' });
+    sendResponse(res, 400, false, 'Invalid actionPlanId');
     return;
   }
   if (minScore !== null && minScore !== undefined && (typeof minScore !== 'number' || minScore < (type === 'attributeEvaluationAverage' ? 1 : 0) || (type === 'attributeEvaluationAverage' && minScore > 5))) {
-    res.status(400).json({ message: `minScore must be a ${type === 'attributeEvaluationAverage' ? 'number between 1 and 5' : 'non-negative number'}` });
+    sendResponse(res, 400, false, `minScore must be a ${type === 'attributeEvaluationAverage' ? 'number between 1 and 5' : 'non-negative number'}`);
     return;
   }
   if (minProgress !== null && minProgress !== undefined && (typeof minProgress !== 'number' || minProgress < 0 || minProgress > 100)) {
-    res.status(400).json({ message: 'minProgress must be a number between 0 and 100' });
+    sendResponse(res, 400, false, 'minProgress must be a number between 0 and 100');
     return;
   }
   if (minObservations !== null && minObservations !== undefined && (typeof minObservations !== 'number' || minObservations < 0)) {
-    res.status(400).json({ message: 'minObservations must be a non-negative number' });
+    sendResponse(res, 400, false, 'minObservations must be a non-negative number');
     return;
   }
 
@@ -125,52 +125,52 @@ export const createBadgeCriteria = async (req: Request, res: Response): Promise<
     // Validate referenced documents
     const badgeDefinition = await BadgeDefinition.findById(badgeDefinitionId);
     if (!badgeDefinition) {
-      res.status(404).json({ message: 'BadgeDefinition not found' });
+      sendResponse(res, 404, false, 'BadgeDefinition not found');
       return;
     }
     if (attributeCategoryId && type !== 'attributeEvaluationAverage') {
       const attributeCategory = await AttributeCategory.findById(attributeCategoryId);
       if (!attributeCategory) {
-        res.status(404).json({ message: 'AttributeCategory not found' });
+        sendResponse(res, 404, false, 'AttributeCategory not found');
         return;
       }
       if (minScore !== null && minScore !== undefined && (minScore < attributeCategory.minScore || minScore > attributeCategory.maxScore)) {
-        res.status(400).json({ message: `minScore must be between ${attributeCategory.minScore} and ${attributeCategory.maxScore}` });
+        sendResponse(res, 400, false, `minScore must be between ${attributeCategory.minScore} and ${attributeCategory.maxScore}`);
         return;
       }
     }
     if (actionPlanId) {
       const actionPlan = await ActionPlan.findById(actionPlanId);
       if (!actionPlan) {
-        res.status(404).json({ message: 'ActionPlan not found' });
+        sendResponse(res, 404, false, 'ActionPlan not found');
         return;
       }
     }
 
     // Validate type-specific fields
     if (type === 'scoreThreshold' && (!attributeCategoryId || minScore === null || minScore === undefined)) {
-      res.status(400).json({ message: 'scoreThreshold requires attributeCategoryId and minScore' });
+      sendResponse(res, 400, false, 'scoreThreshold requires attributeCategoryId and minScore');
       return;
     }
     if (type === 'actionPlanProgress' && (!actionPlanId || minProgress === null || minProgress === undefined)) {
-      res.status(400).json({ message: 'actionPlanProgress requires actionPlanId and minProgress' });
+      sendResponse(res, 400, false, 'actionPlanProgress requires actionPlanId and minProgress');
       return;
     }
     if (type === 'observationCount' && (!attributeCategoryId || minObservations === null || minObservations === undefined)) {
-      res.status(400).json({ message: 'observationCount requires attributeCategoryId and minObservations' });
+      sendResponse(res, 400, false, 'observationCount requires attributeCategoryId and minObservations');
       return;
     }
     if (type === 'custom' && !description) {
-      res.status(400).json({ message: 'custom type requires a description' });
+      sendResponse(res, 400, false, 'custom type requires a description');
       return;
     }
     if (type === 'attributeEvaluationAverage') {
       if (minScore === null || minScore === undefined || scope === undefined || !['yearly', 'allTime'].includes(scope)) {
-        res.status(400).json({ message: 'attributeEvaluationAverage requires minScore and scope (yearly or allTime)' });
+        sendResponse(res, 400, false, 'attributeEvaluationAverage requires minScore and scope (yearly or allTime)');
         return;
       }
       if (attributeCategoryId || actionPlanId || minProgress !== null || minObservations !== null) {
-        res.status(400).json({ message: 'attributeEvaluationAverage must have null attributeCategoryId, actionPlanId, minProgress, and minObservations' });
+        sendResponse(res, 400, false, 'attributeEvaluationAverage must have null attributeCategoryId, actionPlanId, minProgress, and minObservations');
         return;
       }
     }
@@ -194,9 +194,9 @@ export const createBadgeCriteria = async (req: Request, res: Response): Promise<
       { new: true }
     );
 
-    res.status(201).json({ message: 'Badge criteria created successfully', data: criteria });
+    sendResponse(res, 201, true, 'Badge criteria created successfully', criteria);
   } catch (error) {
-    res.status(500).json({ message: `Server error creating badge criteria: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error creating badge criteria: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -207,46 +207,46 @@ export const updateBadgeCriteria = async (req: Request, res: Response): Promise<
   description = description?.trim();
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid badge criteria ID' });
+    sendResponse(res, 400, false, 'Invalid badge criteria ID');
     return;
   }
   if (!badgeDefinitionId && !type && !attributeCategoryId && minScore === undefined && !actionPlanId && minProgress === undefined && minObservations === undefined && scope === undefined && !description) {
-    res.status(400).json({ message: 'At least one field (badgeDefinitionId, type, attributeCategoryId, minScore, actionPlanId, minProgress, minObservations, scope, description) required' });
+    sendResponse(res, 400, false, 'At least one field (badgeDefinitionId, type, attributeCategoryId, minScore, actionPlanId, minProgress, minObservations, scope, description) required');
     return;
   }
   if (badgeDefinitionId && !mongoose.isValidObjectId(badgeDefinitionId)) {
-    res.status(400).json({ message: 'Invalid badgeDefinitionId' });
+    sendResponse(res, 400, false, 'Invalid badgeDefinitionId');
     return;
   }
   if (type && !['scoreThreshold', 'actionPlanProgress', 'observationCount', 'custom', 'attributeEvaluationAverage'].includes(type)) {
-    res.status(400).json({ message: 'Invalid type: must be scoreThreshold, actionPlanProgress, observationCount, custom, or attributeEvaluationAverage' });
+    sendResponse(res, 400, false, 'Invalid type: must be scoreThreshold, actionPlanProgress, observationCount, custom, or attributeEvaluationAverage');
     return;
   }
   if (attributeCategoryId && !mongoose.isValidObjectId(attributeCategoryId)) {
-    res.status(400).json({ message: 'Invalid attributeCategoryId' });
+    sendResponse(res, 400, false, 'Invalid attributeCategoryId');
     return;
   }
   if (actionPlanId && !mongoose.isValidObjectId(actionPlanId)) {
-    res.status(400).json({ message: 'Invalid actionPlanId' });
+    sendResponse(res, 400, false, 'Invalid actionPlanId');
     return;
   }
   if (minScore !== null && minScore !== undefined && (typeof minScore !== 'number' || minScore < (type === 'attributeEvaluationAverage' ? 1 : 0) || (type === 'attributeEvaluationAverage' && minScore > 5))) {
-    res.status(400).json({ message: `minScore must be a ${type === 'attributeEvaluationAverage' ? 'number between 1 and 5' : 'non-negative number'}` });
+    sendResponse(res, 400, false, `minScore must be a ${type === 'attributeEvaluationAverage' ? 'number between 1 and 5' : 'non-negative number'}`);
     return;
   }
   if (minProgress !== null && minProgress !== undefined && (typeof minProgress !== 'number' || minProgress < 0 || minProgress > 100)) {
-    res.status(400).json({ message: 'minProgress must be a number between 0 and 100' });
+    sendResponse(res, 400, false, 'minProgress must be a number between 0 and 100');
     return;
   }
   if (minObservations !== null && minObservations !== undefined && (typeof minObservations !== 'number' || minObservations < 0)) {
-    res.status(400).json({ message: 'minObservations must be a non-negative number' });
+    sendResponse(res, 400, false, 'minObservations must be a non-negative number');
     return;
   }
 
   try {
     const criteria = await BadgeCriteria.findById(id);
     if (!criteria) {
-      res.status(404).json({ message: 'BadgeCriteria not found' });
+      sendResponse(res, 404, false, 'BadgeCriteria not found');
       return;
     }
 
@@ -254,53 +254,53 @@ export const updateBadgeCriteria = async (req: Request, res: Response): Promise<
     if (badgeDefinitionId && badgeDefinitionId !== criteria.badgeDefinitionId.toString()) {
       const badgeDefinition = await BadgeDefinition.findById(badgeDefinitionId);
       if (!badgeDefinition) {
-        res.status(404).json({ message: 'BadgeDefinition not found' });
+        sendResponse(res, 404, false, 'BadgeDefinition not found');
         return;
       }
     }
     if (attributeCategoryId && type !== 'attributeEvaluationAverage') {
       const attributeCategory = await AttributeCategory.findById(attributeCategoryId);
       if (!attributeCategory) {
-        res.status(404).json({ message: 'AttributeCategory not found' });
+        sendResponse(res, 404, false, 'AttributeCategory not found');
         return;
       }
       if (minScore !== null && minScore !== undefined && (minScore < attributeCategory.minScore || minScore > attributeCategory.maxScore)) {
-        res.status(400).json({ message: `minScore must be between ${attributeCategory.minScore} and ${attributeCategory.maxScore}` });
+        sendResponse(res, 400, false, `minScore must be between ${attributeCategory.minScore} and ${attributeCategory.maxScore}`);
         return;
       }
     }
     if (actionPlanId) {
       const actionPlan = await ActionPlan.findById(actionPlanId);
       if (!actionPlan) {
-        res.status(404).json({ message: 'ActionPlan not found' });
+        sendResponse(res, 404, false, 'ActionPlan not found');
         return;
       }
     }
 
     // Validate type-specific fields
     if (type === 'scoreThreshold' && (!attributeCategoryId || minScore === null || minScore === undefined)) {
-      res.status(400).json({ message: 'scoreThreshold requires attributeCategoryId and minScore' });
+      sendResponse(res, 400, false, 'scoreThreshold requires attributeCategoryId and minScore');
       return;
     }
     if (type === 'actionPlanProgress' && (!actionPlanId || minProgress === null || minProgress === undefined)) {
-      res.status(400).json({ message: 'actionPlanProgress requires actionPlanId and minProgress' });
+      sendResponse(res, 400, false, 'actionPlanProgress requires actionPlanId and minProgress');
       return;
     }
     if (type === 'observationCount' && (!attributeCategoryId || minObservations === null || minObservations === undefined)) {
-      res.status(400).json({ message: 'observationCount requires attributeCategoryId and minObservations' });
+      sendResponse(res, 400, false, 'observationCount requires attributeCategoryId and minObservations');
       return;
     }
     if (type === 'custom' && !description) {
-      res.status(400).json({ message: 'custom type requires a description' });
+      sendResponse(res, 400, false, 'custom type requires a description');
       return;
     }
     if (type === 'attributeEvaluationAverage') {
       if (minScore === null || minScore === undefined || scope === undefined || !['yearly', 'allTime'].includes(scope)) {
-        res.status(400).json({ message: 'attributeEvaluationAverage requires minScore and scope (yearly or allTime)' });
+        sendResponse(res, 400, false, 'attributeEvaluationAverage requires minScore and scope (yearly or allTime)');
         return;
       }
       if (attributeCategoryId || actionPlanId || minProgress !== null || minObservations !== null) {
-        res.status(400).json({ message: 'attributeEvaluationAverage must have null attributeCategoryId, actionPlanId, minProgress, and minObservations' });
+        sendResponse(res, 400, false, 'attributeEvaluationAverage must have null attributeCategoryId, actionPlanId, minProgress, and minObservations');
         return;
       }
     }
@@ -323,9 +323,9 @@ export const updateBadgeCriteria = async (req: Request, res: Response): Promise<
     if (description !== undefined) updateData.description = description || '';
 
     const updated = await BadgeCriteria.findByIdAndUpdate(id, updateData, { new: true }).lean();
-    res.status(200).json({ message: 'Badge criteria updated successfully', data: updated });
+    sendResponse(res, 200, true, 'Badge criteria updated successfully', updated);
   } catch (error) {
-    res.status(500).json({ message: `Server error updating badge criteria: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error updating badge criteria: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -333,29 +333,29 @@ export const deleteBadgeCriteria = async (req: Request, res: Response): Promise<
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid badge criteria ID' });
+    sendResponse(res, 400, false, 'Invalid badge criteria ID');
     return;
   }
 
   try {
     const criteria = await BadgeCriteria.findById(id);
     if (!criteria) {
-      res.status(404).json({ message: 'BadgeCriteria not found' });
+      sendResponse(res, 404, false, 'BadgeCriteria not found');
       return;
     }
 
     // Check for dependencies
     const studentBadgeCount = await StudentBadge.countDocuments({ badgeId: criteria.badgeDefinitionId });
     if (studentBadgeCount > 0) {
-      res.status(400).json({ message: `Cannot delete badge criteria; linked to ${studentBadgeCount} student badge(s)` });
+      sendResponse(res, 400, false, `Cannot delete badge criteria; linked to ${studentBadgeCount} student badge(s)`);
       return;
     }
 
     await BadgeDefinition.findByIdAndUpdate(criteria.badgeDefinitionId, { $pull: { criteria: id } });
 
     await BadgeCriteria.findByIdAndDelete(id);
-    res.status(200).json({ message: 'Badge criteria deleted successfully' });
+    sendResponse(res, 200, true, 'Badge criteria deleted successfully');
   } catch (error) {
-    res.status(500).json({ message: `Server error deleting badge criteria: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error deleting badge criteria: ${(error as Error).message}`, null, error);
   }
 };
