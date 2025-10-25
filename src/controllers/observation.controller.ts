@@ -5,6 +5,7 @@ import UserAccount from '../models/userAccount.model';
 import mongoose from 'mongoose';
 import { StudentEnrollment } from '../models/studentEnrollment.model';
 import { AttributeCategory } from '../models/attributeCategory.model';
+import { sendResponse } from '../utils/sendResponse.util';
 
 export const getAllObservations = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, studentId, teacherId, category } = req.query;
@@ -14,34 +15,31 @@ export const getAllObservations = async (req: Request, res: Response): Promise<v
   if (studentId && mongoose.isValidObjectId(studentId)) filter.studentId = studentId;
   if (teacherId && mongoose.isValidObjectId(teacherId)) filter.teacherId = teacherId;
   if (category) {
-  if (!mongoose.isValidObjectId(category)) {
-    res.status(400).json({ message: 'Invalid category ID' });
-    return;
-  }
-  }
-
-  try {
-    const attributeCategory = await AttributeCategory.findById(category);
-    if (!attributeCategory) {
-      res.status(404).json({ message: 'AttributeCategory not found' });
+    if (!mongoose.isValidObjectId(category)) {
+      sendResponse(res, 400, false, 'Invalid category ID');
       return;
     }
     filter.category = category;
+  }
+
+  try {
     const observations = await Observation.find(filter)
+      .populate('teacherId', 'firstName lastName')
+      .populate('studentId', 'firstName lastName')
+      .populate('category', 'name minScore maxScore')
       .sort({ date: -1 })
       .skip(skip)
       .limit(Number(limit));
+    
     const total = await Observation.countDocuments(filter);
 
-    res.status(200).json({ 
-        data: observations, 
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        pages: Math.ceil(total / Number(limit))
+    sendResponse(res, 200, true, 'Observations fetched successfully', observations, null, {
+      total,
+      page: Number(page),
+      limit: Number(limit)
     });
   } catch (error) {
-    res.status(500).json({ message: 'Server error fetching observations.', error });
+    sendResponse(res, 500, false, 'Server error fetching observations.', null, error);
   }
 };
 
@@ -49,19 +47,23 @@ export const getObservationById = async (req: Request, res: Response): Promise<v
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid observation ID' });
+    sendResponse(res, 400, false, 'Invalid observation ID');
     return;
   }
 
   try {
-    const observation = await Observation.findById(id);
+    const observation = await Observation.findById(id)
+      .populate('teacherId', 'firstName lastName')
+      .populate('studentId', 'firstName lastName')
+      .populate('category', 'name minScore maxScore');
+    
     if (!observation) {
-      res.status(404).json({ message: 'Observation not found.' });
+      sendResponse(res, 404, false, 'Observation not found.');
       return;
     }
-    res.status(200).json({ data: observation });
+    sendResponse(res, 200, true, 'Observation fetched successfully', observation);
   } catch (error) {
-    res.status(500).json({ message: 'Server error fetching observation.', error });
+    sendResponse(res, 500, false, 'Server error fetching observation.', null, error);
   }
 };
 
@@ -69,36 +71,36 @@ export const createObservation = async (req: Request, res: Response): Promise<vo
   const { studentId, teacherId, date, category, description, score } = req.body;
 
   if (!mongoose.isValidObjectId(studentId) || !mongoose.isValidObjectId(teacherId)) {
-    res.status(400).json({ message: 'Invalid studentId or teacherId' });
+    sendResponse(res, 400, false, 'Invalid studentId or teacherId');
     return;
   }
   if (!date || !category || !description || !score) {
-    res.status(400).json({ message: 'Missing required fields: date, category, description, or score' });
+    sendResponse(res, 400, false, 'Missing required fields: date, category, description, or score');
     return;
   }
   if (!mongoose.isValidObjectId(category)) {
-    res.status(400).json({ message: 'Invalid category ID' });
+    sendResponse(res, 400, false, 'Invalid category ID');
     return;
   }
 
   try {
     const attributeCategory = await AttributeCategory.findById(category);
     if (!attributeCategory) {
-      res.status(404).json({ message: 'AttributeCategory not found' });
+      sendResponse(res, 404, false, 'AttributeCategory not found');
       return;
     }
     if (score < attributeCategory.minScore || score > attributeCategory.maxScore) {
-      res.status(400).json({ message: `Score must be between ${attributeCategory.minScore} and ${attributeCategory.maxScore}` });
+      sendResponse(res, 400, false, `Score must be between ${attributeCategory.minScore} and ${attributeCategory.maxScore}`);
       return;
     }
     const student = await Student.findById(studentId);
     if (!student) {
-      res.status(404).json({ message: 'Student not found.' });
+      sendResponse(res, 404, false, 'Student not found.');
       return;
     }
     const teacher = await UserAccount.findOne({ _id: teacherId, role: 'teacher' });
     if (!teacher) {
-      res.status(404).json({ message: 'Teacher not found or invalid role.' });
+      sendResponse(res, 404, false, 'Teacher not found or invalid role.');
       return;
     }
 
@@ -111,9 +113,15 @@ export const createObservation = async (req: Request, res: Response): Promise<vo
       score
     });
 
-    res.status(201).json({ message: 'Observation created successfully.', data: observation });
+    // Populate the created observation for response
+    const populatedObservation = await Observation.findById(observation._id)
+      .populate('teacherId', 'firstName lastName')
+      .populate('studentId', 'firstName lastName')
+      .populate('category', 'name minScore maxScore');
+
+    sendResponse(res, 201, true, 'Observation created successfully.', populatedObservation);
   } catch (error) {
-    res.status(500).json({ message: 'Server error creating observation.', error });
+    sendResponse(res, 500, false, 'Server error creating observation.', null, error);
   }
 };
 
@@ -122,37 +130,43 @@ export const updateObservation = async (req: Request, res: Response): Promise<vo
   const { date, category, description, score } = req.body;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid observation ID' });
+    sendResponse(res, 400, false, 'Invalid observation ID');
     return;
   }
 
   if (!date && !category && !description && score === undefined) {
-    res.status(400).json({ message: 'At least one field (date, category, description, score) required.' });
+    sendResponse(res, 400, false, 'At least one field (date, category, description, score) required.');
     return;
   }
 
-  if (category) {
-  if (!mongoose.isValidObjectId(category)) {
-    res.status(400).json({ message: 'Invalid category ID' });
+  if (category && !mongoose.isValidObjectId(category)) {
+    sendResponse(res, 400, false, 'Invalid category ID');
     return;
-  }}
+  }
 
   try {
-
-  const attributeCategory = await AttributeCategory.findById(category);
-  if (!attributeCategory) {
-    res.status(404).json({ message: 'AttributeCategory not found' });
-    return;
-  }
-  if (score !== undefined && (score < attributeCategory.minScore || score > attributeCategory.maxScore)) {
-    res.status(400).json({ message: `Score must be between ${attributeCategory.minScore} and ${attributeCategory.maxScore}` });
-    return;
-  }
+    if (category) {
+      const attributeCategory = await AttributeCategory.findById(category);
+      if (!attributeCategory) {
+        sendResponse(res, 404, false, 'AttributeCategory not found');
+        return;
+      }
+    }
 
     const observation = await Observation.findById(id);
     if (!observation) {
-      res.status(404).json({ message: 'Observation not found.' });
+      sendResponse(res, 404, false, 'Observation not found.');
       return;
+    }
+
+    // Validate score against current category if score is being updated
+    if (score !== undefined) {
+      const currentCategoryId = category || observation.category;
+      const attributeCategory = await AttributeCategory.findById(currentCategoryId);
+      if (attributeCategory && (score < attributeCategory.minScore || score > attributeCategory.maxScore)) {
+        sendResponse(res, 400, false, `Score must be between ${attributeCategory.minScore} and ${attributeCategory.maxScore}`);
+        return;
+      }
     }
 
     const updateData: any = {};
@@ -161,10 +175,14 @@ export const updateObservation = async (req: Request, res: Response): Promise<vo
     if (description) updateData.description = description;
     if (score !== undefined) updateData.score = score;
 
-    const updated = await Observation.findByIdAndUpdate(id, updateData, { new: true });
-    res.status(200).json({ message: 'Observation updated successfully.', data: updated });
+    const updated = await Observation.findByIdAndUpdate(id, updateData, { new: true })
+      .populate('teacherId', 'firstName lastName')
+      .populate('studentId', 'firstName lastName')
+      .populate('category', 'name minScore maxScore');
+
+    sendResponse(res, 200, true, 'Observation updated successfully.', updated);
   } catch (error) {
-    res.status(500).json({ message: 'Server error updating observation.', error });
+    sendResponse(res, 500, false, 'Server error updating observation.', null, error);
   }
 };
 
@@ -172,68 +190,65 @@ export const deleteObservation = async (req: Request, res: Response): Promise<vo
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid observation ID' });
+    sendResponse(res, 400, false, 'Invalid observation ID');
     return;
   }
 
   try {
     const observation = await Observation.findById(id);
     if (!observation) {
-      res.status(404).json({ message: 'Observation not found.' });
+      sendResponse(res, 404, false, 'Observation not found.');
       return;
     }
 
     await Observation.findByIdAndDelete(id);
-    res.status(200).json({ message: 'Observation deleted successfully.' });
+    sendResponse(res, 200, true, 'Observation deleted successfully.');
   } catch (error) {
-    res.status(500).json({ message: 'Server error deleting observation.', error });
+    sendResponse(res, 500, false, 'Server error deleting observation.', null, error);
   }
 };
 
-
-
 export const getObservationsByStudentAndDate = async (req: Request, res: Response): Promise<void> => {
-    const { studentId } = req.params;
-    const { startDate, endDate, category } = req.query;
+  const { studentId } = req.params;
+  const { startDate, endDate, category } = req.query;
 
-    if (!mongoose.isValidObjectId(studentId)) {
-    res.status(400).json({ message: 'Invalid studentId' });
+  if (!mongoose.isValidObjectId(studentId)) {
+    sendResponse(res, 400, false, 'Invalid studentId');
     return;
+  }
+  if (!startDate || !endDate) {
+    sendResponse(res, 400, false, 'Missing required fields: startDate or endDate');
+    return;
+  }
+  
+  const filter: any = {
+    studentId, 
+    date: {
+      $gte: new Date(startDate as string),
+      $lt: new Date(endDate as string)
     }
-    if (!startDate || !endDate) {
-        res.status(400).json({ message: 'Missing required fields: startDate or endDate' });
-        return;
-    }
-    
-    const filter: any = {studentId, 
-        date: {
-            $gte : new Date( startDate as string ),
-            $lt : new Date ( endDate as string )
-        }
-    }
+  };
 
-    if (category) {
+  if (category) {
     if (!mongoose.isValidObjectId(category)) {
-        res.status(400).json({ message: 'Invalid category ID' });
-        return;
-      }
+      sendResponse(res, 400, false, 'Invalid category ID');
+      return;
     }
+    filter.category = category;
+  }
 
-    try{
-      const attributeCategory = await AttributeCategory.findById(category);
-      if (!attributeCategory) {
-        res.status(404).json({ message: 'AttributeCategory not found' });
-        return;
-      }
-      filter.category = category;
-      const observations = await Observation.find(filter).sort({ date: -1 });
-      res.status(200).json({ data: observations, count: observations.length });
-    }catch(error){
-        res.status(500).json({message : "Server error"})
-    }
-}
-
-
+  try {
+    const observations = await Observation.find(filter)
+      .populate('teacherId', 'firstName lastName')
+      .populate('studentId', 'firstName lastName')
+      .populate('category', 'name minScore maxScore')
+      .sort({ date: -1 });
+    
+    sendResponse(res, 200, true, 'Observations fetched successfully', observations);
+  } catch (error) {
+    sendResponse(res, 500, false, 'Server error fetching observations', null, error);
+  }
+};
 
 export const getObservationsByTeacher = async (req: Request, res: Response): Promise<void> => {
   const { teacherId } = req.params;
@@ -241,39 +256,37 @@ export const getObservationsByTeacher = async (req: Request, res: Response): Pro
   const skip = (Number(page) - 1) * Number(limit);
 
   if (!mongoose.isValidObjectId(teacherId)) {
-    res.status(400).json({ message: 'Invalid teacherId' });
+    sendResponse(res, 400, false, 'Invalid teacherId');
     return;
   }
 
   const filter: any = { teacherId };
   if (category) {
-  if (!mongoose.isValidObjectId(category)) {
-    res.status(400).json({ message: 'Invalid category ID' });
-    return;
-  }
-  }
-  try {
-    const attributeCategory = await AttributeCategory.findById(category);
-    if (!attributeCategory) {
-      res.status(404).json({ message: 'AttributeCategory not found' });
+    if (!mongoose.isValidObjectId(category)) {
+      sendResponse(res, 400, false, 'Invalid category ID');
       return;
     }
-  filter.category = category;
+    filter.category = category;
+  }
+
+  try {
     const observations = await Observation.find(filter)
+      .populate('teacherId', 'firstName lastName')
+      .populate('studentId', 'firstName lastName')
+      .populate('category', 'name minScore maxScore')
       .sort({ date: -1 })
       .skip(skip)
       .limit(Number(limit));
+    
     const total = await Observation.countDocuments(filter);
 
-    res.status(200).json({ 
-      data: observations, 
-      page: Number(page),
-      limit: Number(limit),
+    sendResponse(res, 200, true, 'Teacher observations fetched successfully', observations, null, {
       total,
-      pages: Math.ceil(total / Number(limit))
+      page: Number(page),
+      limit: Number(limit)
     });
   } catch (error) {
-    res.status(500).json({ message: 'Server error fetching teacher observations.', error });
+    sendResponse(res, 500, false, 'Server error fetching teacher observations.', null, error);
   }
 };
 
@@ -281,24 +294,23 @@ export const bulkDeleteObservationsByStudent = async (req: Request, res: Respons
   const { studentId } = req.params;
 
   if (!mongoose.isValidObjectId(studentId)) {
-    res.status(400).json({ message: 'Invalid studentId' });
+    sendResponse(res, 400, false, 'Invalid studentId');
     return;
   }
 
   try {
     const student = await Student.findById(studentId);
     if (!student) {
-      res.status(404).json({ message: 'Student not found.' });
+      sendResponse(res, 404, false, 'Student not found.');
       return;
     }
 
     const result = await Observation.deleteMany({ studentId });
-    res.status(200).json({ message: `Deleted ${result.deletedCount} observations successfully.` });
+    sendResponse(res, 200, true, `Deleted ${result.deletedCount} observations successfully.`);
   } catch (error) {
-    res.status(500).json({ message: 'Server error deleting observations.', error });
+    sendResponse(res, 500, false, 'Server error deleting observations.', null, error);
   }
 };
-
 
 export const getObservationsByTeacherAndGrade = async (req: Request, res: Response): Promise<void> => {
   const { teacherId, gradeId } = req.params;
@@ -306,14 +318,14 @@ export const getObservationsByTeacherAndGrade = async (req: Request, res: Respon
   const skip = (Number(page) - 1) * Number(limit);
 
   if (!mongoose.isValidObjectId(teacherId) || !mongoose.isValidObjectId(gradeId)) {
-    res.status(400).json({ message: 'Invalid teacherId or gradeId' });
+    sendResponse(res, 400, false, 'Invalid teacherId or gradeId');
     return;
   }
 
   try {
     const teacher = await UserAccount.findOne({ _id: teacherId, role: 'teacher' });
     if (!teacher) {
-      res.status(404).json({ message: 'Teacher not found or invalid role.' });
+      sendResponse(res, 404, false, 'Teacher not found or invalid role.');
       return;
     }
 
@@ -321,43 +333,42 @@ export const getObservationsByTeacherAndGrade = async (req: Request, res: Respon
     const studentIds = enrollments.map(enrollment => enrollment.studentId);
 
     if (!studentIds.length) {
-      res.status(200).json({ data: [], page: Number(page), limit: Number(limit), total: 0, pages: 0 });
+      sendResponse(res, 200, true, 'No observations found', [], null, {
+        total: 0,
+        page: Number(page),
+        limit: Number(limit)
+      });
       return;
     }
 
     const filter: any = { teacherId, studentId: { $in: studentIds } };
-  if (category) {
-  if (!mongoose.isValidObjectId(category)) {
-    res.status(400).json({ message: 'Invalid category ID' });
-    return;
-  }
-  const attributeCategory = await AttributeCategory.findById(category);
-  if (!attributeCategory) {
-    res.status(404).json({ message: 'AttributeCategory not found' });
-    return;
-  }
-  filter.category = category;
-}
+    if (category) {
+      if (!mongoose.isValidObjectId(category)) {
+        sendResponse(res, 400, false, 'Invalid category ID');
+        return;
+      }
+      filter.category = category;
+    }
 
     const observations = await Observation.find(filter)
+      .populate('teacherId', 'firstName lastName')
+      .populate('studentId', 'firstName lastName')
+      .populate('category', 'name minScore maxScore')
       .sort({ date: -1 })
       .skip(skip)
       .limit(Number(limit));
+    
     const total = await Observation.countDocuments(filter);
 
-    res.status(200).json({ 
-      data: observations, 
-      page: Number(page),
-      limit: Number(limit),
+    sendResponse(res, 200, true, 'Observations fetched successfully', observations, null, {
       total,
-      pages: Math.ceil(total / Number(limit))
+      page: Number(page),
+      limit: Number(limit)
     });
   } catch (error) {
-    res.status(500).json({ message: 'Server error fetching observations by teacher and grade.', error });
+    sendResponse(res, 500, false, 'Server error fetching observations by teacher and grade.', null, error);
   }
 };
-
-
 
 export const getObservationsByCategoryAndGrade = async (req: Request, res: Response): Promise<void> => {
   const { gradeId } = req.params;
@@ -365,32 +376,32 @@ export const getObservationsByCategoryAndGrade = async (req: Request, res: Respo
   const teacherId = (req as any).user?._id;
 
   if (!mongoose.isValidObjectId(gradeId)) {
-    res.status(400).json({ message: 'Invalid gradeId' });
+    sendResponse(res, 400, false, 'Invalid gradeId');
     return;
   }
   if (!mongoose.isValidObjectId(teacherId)) {
-    res.status(400).json({ message: 'Invalid teacherId from token' });
+    sendResponse(res, 400, false, 'Invalid teacherId from token');
     return;
   }
   if (!category) {
-  res.status(400).json({ message: 'Category is required' });
-  return;
+    sendResponse(res, 400, false, 'Category is required');
+    return;
   }
   if (!mongoose.isValidObjectId(category)) {
-    res.status(400).json({ message: 'Invalid category ID' });
+    sendResponse(res, 400, false, 'Invalid category ID');
     return;
   }
-
 
   try {
-  const attributeCategory = await AttributeCategory.findById(category);
-  if (!attributeCategory) {
-    res.status(400).json({ message: 'AttributeCategory not found' });
-    return;
-  }
+    const attributeCategory = await AttributeCategory.findById(category);
+    if (!attributeCategory) {
+      sendResponse(res, 400, false, 'AttributeCategory not found');
+      return;
+    }
+
     const teacher = await UserAccount.findOne({ _id: teacherId, role: 'teacher' });
     if (!teacher) {
-      res.status(404).json({ message: 'Teacher not found or invalid role.' });
+      sendResponse(res, 404, false, 'Teacher not found or invalid role.');
       return;
     }
 
@@ -398,7 +409,11 @@ export const getObservationsByCategoryAndGrade = async (req: Request, res: Respo
     const studentIds = enrollments.map(enrollment => enrollment.studentId);
 
     if (!studentIds.length) {
-      res.status(200).json({ data: [], page: Number(page), limit: Number(limit), total: 0, pages: 0 });
+      sendResponse(res, 200, true, 'No observations found', [], null, {
+        total: 0,
+        page: Number(page),
+        limit: Number(limit)
+      });
       return;
     }
 
@@ -406,19 +421,21 @@ export const getObservationsByCategoryAndGrade = async (req: Request, res: Respo
     const skip = (Number(page) - 1) * Number(limit);
 
     const observations = await Observation.find(filter)
+      .populate('teacherId', 'firstName lastName')
+      .populate('studentId', 'firstName lastName')
+      .populate('category', 'name minScore maxScore')
       .sort({ date: -1 })
       .skip(skip)
       .limit(Number(limit));
+    
     const total = await Observation.countDocuments(filter);
 
-    res.status(200).json({ 
-      data: observations, 
-      page: Number(page),
-      limit: Number(limit),
+    sendResponse(res, 200, true, 'Observations fetched successfully', observations, null, {
       total,
-      pages: Math.ceil(total / Number(limit))
+      page: Number(page),
+      limit: Number(limit)
     });
   } catch (error) {
-    res.status(500).json({ message: 'Server error fetching observations by category and grade.', error });
+    sendResponse(res, 500, false, 'Server error fetching observations by category and grade.', null, error);
   }
 };
