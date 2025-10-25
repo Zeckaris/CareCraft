@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { AttributeCategory } from '../models/attributeCategory.model';
 import { Observation } from '../models/observation.model';
 import { FlaggedIssue } from '../models/flaggedIssue.model';
+import { sendResponse } from '../utils/sendResponse.util';
 
 export const getAllAttributeCategories = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, name } = req.query;
@@ -20,15 +21,13 @@ export const getAllAttributeCategories = async (req: Request, res: Response): Pr
       .limit(Number(limit));
     const total = await AttributeCategory.countDocuments(filter);
 
-    res.status(200).json({
-      data: categories,
-      page: Number(page),
-      limit: Number(limit),
+    sendResponse(res, 200, true, 'Attribute categories fetched successfully', categories, null, {
       total,
-      pages: Math.ceil(total / Number(limit))
+      page: Number(page),
+      limit: Number(limit)
     });
   } catch (error) {
-    res.status(500).json({ message: 'Server error fetching attribute categories.', error });
+    sendResponse(res, 500, false, 'Server error fetching attribute categories.', null, error);
   }
 };
 
@@ -36,19 +35,19 @@ export const getAttributeCategoryById = async (req: Request, res: Response): Pro
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid attribute category ID' });
+    sendResponse(res, 400, false, 'Invalid attribute category ID');
     return;
   }
 
   try {
     const category = await AttributeCategory.findById(id);
     if (!category) {
-      res.status(404).json({ message: 'AttributeCategory not found.' });
+      sendResponse(res, 404, false, 'AttributeCategory not found.');
       return;
     }
-    res.status(200).json({ data: category });
+    sendResponse(res, 200, true, 'Attribute category fetched successfully', category);
   } catch (error) {
-    res.status(500).json({ message: 'Server error fetching attribute category.', error });
+    sendResponse(res, 500, false, 'Server error fetching attribute category.', null, error);
   }
 };
 
@@ -56,18 +55,18 @@ export const createAttributeCategory = async (req: Request, res: Response): Prom
   const { name, description, minScore, maxScore } = req.body;
 
   if (!name || !minScore || !maxScore) {
-    res.status(400).json({ message: 'Missing required fields: name, minScore, or maxScore' });
+    sendResponse(res, 400, false, 'Missing required fields: name, minScore, or maxScore');
     return;
   }
   if (minScore >= maxScore) {
-    res.status(400).json({ message: 'minScore must be less than maxScore' });
+    sendResponse(res, 400, false, 'minScore must be less than maxScore');
     return;
   }
 
   try {
     const existingCategory = await AttributeCategory.findOne({ name });
     if (existingCategory) {
-      res.status(400).json({ message: 'Attribute category name already exists.' });
+      sendResponse(res, 400, false, 'Attribute category name already exists.');
       return;
     }
 
@@ -78,9 +77,9 @@ export const createAttributeCategory = async (req: Request, res: Response): Prom
       maxScore
     });
 
-    res.status(201).json({ message: 'Attribute category created successfully.', data: category });
+    sendResponse(res, 201, true, 'Attribute category created successfully.', category);
   } catch (error) {
-    res.status(500).json({ message: 'Server error creating attribute category.', error });
+    sendResponse(res, 500, false, 'Server error creating attribute category.', null, error);
   }
 };
 
@@ -89,29 +88,29 @@ export const updateAttributeCategory = async (req: Request, res: Response): Prom
   const { name, description, minScore, maxScore } = req.body;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid attribute category ID' });
+    sendResponse(res, 400, false, 'Invalid attribute category ID');
     return;
   }
   if (!name && !description && minScore === undefined && maxScore === undefined) {
-    res.status(400).json({ message: 'At least one field (name, description, minScore, maxScore) required.' });
+    sendResponse(res, 400, false, 'At least one field (name, description, minScore, maxScore) required.');
     return;
   }
   if (minScore !== undefined && maxScore !== undefined && minScore >= maxScore) {
-    res.status(400).json({ message: 'minScore must be less than maxScore' });
+    sendResponse(res, 400, false, 'minScore must be less than maxScore');
     return;
   }
 
   try {
     const category = await AttributeCategory.findById(id);
     if (!category) {
-      res.status(404).json({ message: 'AttributeCategory not found.' });
+      sendResponse(res, 404, false, 'AttributeCategory not found.');
       return;
     }
 
     if (name && name !== category.name) {
       const existingCategory = await AttributeCategory.findOne({ name });
       if (existingCategory) {
-        res.status(400).json({ message: 'Attribute category name already exists.' });
+        sendResponse(res, 400, false, 'Attribute category name already exists.');
         return;
       }
     }
@@ -123,9 +122,9 @@ export const updateAttributeCategory = async (req: Request, res: Response): Prom
     if (maxScore !== undefined) updateData.maxScore = maxScore;
 
     const updated = await AttributeCategory.findByIdAndUpdate(id, updateData, { new: true });
-    res.status(200).json({ message: 'Attribute category updated successfully.', data: updated });
+    sendResponse(res, 200, true, 'Attribute category updated successfully.', updated);
   } catch (error) {
-    res.status(500).json({ message: 'Server error updating attribute category.', error });
+    sendResponse(res, 500, false, 'Server error updating attribute category.', null, error);
   }
 };
 
@@ -133,14 +132,14 @@ export const deleteAttributeCategory = async (req: Request, res: Response): Prom
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid attribute category ID' });
+    sendResponse(res, 400, false, 'Invalid attribute category ID');
     return;
   }
 
   try {
     const category = await AttributeCategory.findById(id);
     if (!category) {
-      res.status(404).json({ message: 'AttributeCategory not found.' });
+      sendResponse(res, 404, false, 'AttributeCategory not found.');
       return;
     }
 
@@ -150,13 +149,13 @@ export const deleteAttributeCategory = async (req: Request, res: Response): Prom
     if (observationCount > 0) dependencies.push(`${observationCount} observation(s)`);
     if (flaggedIssueCount > 0) dependencies.push(`${flaggedIssueCount} flagged issue(s)`);
     if (dependencies.length > 0) {
-      res.status(400).json({ message: `Cannot delete category; it is used by: ${dependencies.join(', ')}.` });
+      sendResponse(res, 400, false, `Cannot delete category; it is used by: ${dependencies.join(', ')}.`);
       return;
     }
 
     await AttributeCategory.findByIdAndDelete(id);
-    res.status(200).json({ message: 'Attribute category deleted successfully.' });
+    sendResponse(res, 200, true, 'Attribute category deleted successfully.');
   } catch (error) {
-    res.status(500).json({ message: 'Server error deleting attribute category.', error });
+    sendResponse(res, 500, false, 'Server error deleting attribute category.', null, error);
   }
 };
