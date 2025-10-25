@@ -5,6 +5,7 @@ import {ActionPlan} from '../models/actionPlan.model';
 import {AttributeCategory} from '../models/attributeCategory.model';
 import {Student} from '../models/student.model';
 import UserAccount from '../models/userAccount.model';
+import { sendResponse } from  '../utils/sendResponse.util';
 
 interface AuthRequest extends Request {
   user?: { id: string; email: string; role: string };
@@ -20,25 +21,25 @@ export const createTemplateFromActionPlan = async (req: AuthRequest, res: Respon
     console.log('User:', user);
 
     if (!user || !user.id) {
-      return res.status(401).json({ error: 'User not authenticated' });
+      return sendResponse(res, 401, false, 'User not authenticated');
     }
 
     if (!title || !categoryId) {
-      return res.status(400).json({ error: 'Title and categoryId are required' });
+      return sendResponse(res, 400, false, 'Title and categoryId are required');
     }
 
     if (!Types.ObjectId.isValid(categoryId)) {
-      return res.status(400).json({ error: 'Invalid categoryId format' });
+      return sendResponse(res, 400, false, 'Invalid categoryId format');
     }
 
     const actionPlan = await ActionPlan.findById(actionPlanId);
     if (!actionPlan) {
-      return res.status(404).json({ error: 'ActionPlan not found' });
+      return sendResponse(res, 404, false, 'ActionPlan not found');
     }
 
     const category = await AttributeCategory.findById(categoryId);
     if (!category) {
-      return res.status(400).json({ error: 'Invalid categoryId: Category not found' });
+      return sendResponse(res, 400, false, 'Invalid categoryId: Category not found');
     }
 
     const actionSteps = actionPlan.actionSteps.map((step, index) => ({
@@ -65,13 +66,13 @@ export const createTemplateFromActionPlan = async (req: AuthRequest, res: Respon
       .populate('createdBy', 'firstName lastName email');
 
     if (!populatedTemplate) {
-      return res.status(500).json({ error: 'Failed to populate template' });
+      return sendResponse(res, 500, false, 'Failed to populate template');
     }
 
-    res.status(201).json({ data: populatedTemplate });
+    sendResponse(res, 201, true, 'Template created successfully', populatedTemplate);
   } catch (error) {
     console.error('Create template error:', error);
-    res.status(500).json({ error: `Server error: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -107,14 +108,13 @@ export const getAllTemplates = async (req: Request, res: Response) => {
       SharedPlanTemplate.countDocuments(query),
     ]);
 
-    res.status(200).json({
-      data: templates,
+    sendResponse(res, 200, true, 'Templates fetched successfully', templates, null, {
       total,
       page: Number(page),
-      limit: Number(limit),
+      limit: Number(limit)
     });
   } catch (error) {
-    res.status(500).json({ error: 'Server error' });
+    sendResponse(res, 500, false, 'Server error fetching templates', null, error);
   }
 };
 
@@ -127,15 +127,14 @@ export const getTemplateById = async (req: Request, res: Response) => {
       .populate('createdBy', 'firstName lastName email');
 
     if (!template) {
-      return res.status(404).json({ error: 'Template not found' });
+      return sendResponse(res, 404, false, 'Template not found');
     }
 
-    res.status(200).json({ data: template });
+    sendResponse(res, 200, true, 'Template fetched successfully', template);
   } catch (error) {
-    res.status(500).json({ error: 'Server error' });
+    sendResponse(res, 500, false, 'Server error fetching template', null, error);
   }
 };
-
 
 export const applyTemplate = async (req: AuthRequest, res: Response) => {
   try {
@@ -146,12 +145,12 @@ export const applyTemplate = async (req: AuthRequest, res: Response) => {
     console.log('Apply template - User:', req.user);
 
     if (!studentId || !teacherId || !issue || !goal || !startDate || !endDate) {
-      return res.status(400).json({ error: 'All fields (studentId, teacherId, issue, goal, startDate, endDate) are required' });
+      return sendResponse(res, 400, false, 'All fields (studentId, teacherId, issue, goal, startDate, endDate) are required');
     }
 
     const template = await SharedPlanTemplate.findById(id);
     if (!template) {
-      return res.status(404).json({ error: 'Template not found' });
+      return sendResponse(res, 404, false, 'Template not found');
     }
 
     // Check if student and teacher exist
@@ -160,10 +159,10 @@ export const applyTemplate = async (req: AuthRequest, res: Response) => {
       UserAccount.findById(teacherId),
     ]);
     if (!student) {
-      return res.status(400).json({ error: 'Invalid studentId' });
+      return sendResponse(res, 400, false, 'Invalid studentId');
     }
     if (!teacher || !['teacher', 'admin'].includes(teacher.role)) {
-      return res.status(400).json({ error: 'Invalid teacherId: User must have teacher or admin role' });
+      return sendResponse(res, 400, false, 'Invalid teacherId: User must have teacher or admin role');
     }
 
     const actionSteps = template.actionSteps.map(step => ({
@@ -191,13 +190,12 @@ export const applyTemplate = async (req: AuthRequest, res: Response) => {
       .populate('studentId', 'firstName lastName')
       .populate('teacherId', 'firstName lastName email');
 
-    res.status(201).json({ data: populatedActionPlan });
+    sendResponse(res, 201, true, 'Template applied successfully', populatedActionPlan);
   } catch (error) {
     console.error('Apply template error:', error);
-    res.status(500).json({ error: `Server error: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error: ${(error as Error).message}`, null, error);
   }
 };
-
 
 export const rateTemplate = async (req: AuthRequest, res: Response) => {
   try {
@@ -209,22 +207,22 @@ export const rateTemplate = async (req: AuthRequest, res: Response) => {
     console.log('Rate template - User:', req.user);
 
     if (!user || !user.id) {
-      return res.status(401).json({ error: 'User not authenticated' });
+      return sendResponse(res, 401, false, 'User not authenticated');
     }
 
     // Validate rating
     if (!rating || rating < 1 || rating > 5) {
-      return res.status(400).json({ error: 'Rating must be between 1 and 5' });
+      return sendResponse(res, 400, false, 'Rating must be between 1 and 5');
     }
 
     const template = await SharedPlanTemplate.findById(id);
     if (!template) {
-      return res.status(404).json({ error: 'Template not found' });
+      return sendResponse(res, 404, false, 'Template not found');
     }
 
     const userId = new Types.ObjectId(user.id);
     if (template.ratedBy.some((id) => id.equals(userId))) {
-      return res.status(400).json({ error: 'You have already rated this template' });
+      return sendResponse(res, 400, false, 'You have already rated this template');
     }
 
     template.rating = (template.rating * template.ratingCount + rating) / (template.ratingCount + 1);
@@ -238,10 +236,10 @@ export const rateTemplate = async (req: AuthRequest, res: Response) => {
       .populate('categoryId', 'name')
       .populate('createdBy', 'firstName lastName email');
 
-    res.status(200).json({ data: populatedTemplate });
+    sendResponse(res, 200, true, 'Template rated successfully', populatedTemplate);
   } catch (error) {
     console.error('Rate template error:', error);
-    res.status(500).json({ error: `Server error: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -252,14 +250,14 @@ export const updateTemplate = async (req: Request, res: Response) => {
 
     const template = await SharedPlanTemplate.findById(id);
     if (!template) {
-      return res.status(404).json({ error: 'Template not found' });
+      return sendResponse(res, 404, false, 'Template not found');
     }
 
     if (categoryId && !(await AttributeCategory.findById(categoryId))) {
-      return res.status(400).json({ error: 'Invalid categoryId' });
+      return sendResponse(res, 400, false, 'Invalid categoryId');
     }
     if (actionSteps && (!Array.isArray(actionSteps) || actionSteps.length === 0)) {
-      return res.status(400).json({ error: 'At least one action step is required' });
+      return sendResponse(res, 400, false, 'At least one action step is required');
     }
 
     if (title) template.title = title;
@@ -277,9 +275,9 @@ export const updateTemplate = async (req: Request, res: Response) => {
       .populate('categoryId', 'name')
       .populate('createdBy', 'firstName lastName email');
 
-    res.status(200).json({ data: populatedTemplate });
+    sendResponse(res, 200, true, 'Template updated successfully', populatedTemplate);
   } catch (error) {
-    res.status(500).json({ error: 'Server error' });
+    sendResponse(res, 500, false, 'Server error updating template', null, error);
   }
 };
 
@@ -290,13 +288,13 @@ export const deleteTemplate = async (req: Request, res: Response) => {
 
     const template = await SharedPlanTemplate.findById(id);
     if (!template) {
-      return res.status(404).json({ error: 'Template not found' });
+      return sendResponse(res, 404, false, 'Template not found');
     }
 
     await template.deleteOne();
 
-    res.status(200).json({ data: { message: 'Template deleted successfully' } });
+    sendResponse(res, 200, true, 'Template deleted successfully', { message: 'Template deleted successfully' });
   } catch (error) {
-    res.status(500).json({ error: 'Server error' });
+    sendResponse(res, 500, false, 'Server error deleting template', null, error);
   }
 };
