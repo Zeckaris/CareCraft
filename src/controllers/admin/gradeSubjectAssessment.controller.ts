@@ -3,13 +3,14 @@ import { GradeSubjectAssessment } from "../../models/gradeSubjectAssessment.mode
 import { AssessmentSetup } from "../../models/assessment/assessmentSetup.model"
 import { Subject } from "../../models/subject.model"
 import { Grade } from "../../models/grade.model"
+import { sendResponse } from '../../utils/sendResponse.util'
 
 // 1. CREATE - UNIQUE Grade+Subject ENFORCED
 export const createGradeSubjectAssessment = async (req: Request, res: Response): Promise<void> => {
     const { gradeId, subjectId, assessmentSetupId } = req.body
     
     if (!gradeId || !subjectId) {
-        res.status(400).json({ message: "Missing: gradeId, subjectId" })
+        sendResponse(res, 400, false, "Missing: gradeId, subjectId")
         return
     }
 
@@ -17,8 +18,7 @@ export const createGradeSubjectAssessment = async (req: Request, res: Response):
         // UNIQUE CHECK - ONLY ONE per Grade+Subject
         const existing = await GradeSubjectAssessment.findOne({ gradeId, subjectId })
         if (existing) {
-            res.status(400).json({ 
-                message: "Assessment setup already exists for this grade + subject",
+            sendResponse(res, 400, false, "Assessment setup already exists for this grade + subject", {
                 existing: existing._id 
             })
             return
@@ -29,7 +29,7 @@ export const createGradeSubjectAssessment = async (req: Request, res: Response):
         if (!finalSetupId) {
             const defaultSetup = await AssessmentSetup.findOne({ name: "Full Term Assessment" })
             if (!defaultSetup) {
-                res.status(500).json({ message: "Default setup not found. Run: npm run seed" })
+                sendResponse(res, 500, false, "Default setup not found. Run: npm run seed")
                 return
             }
             finalSetupId = defaultSetup._id
@@ -42,7 +42,7 @@ export const createGradeSubjectAssessment = async (req: Request, res: Response):
         const setup = await AssessmentSetup.findById(finalSetupId)
         
         if (!grade || !subject || !setup) {
-            res.status(400).json({ message: "Invalid grade, subject, or setup ID" })
+            sendResponse(res, 400, false, "Invalid grade, subject, or setup ID")
             return
         }
 
@@ -59,28 +59,40 @@ export const createGradeSubjectAssessment = async (req: Request, res: Response):
             .populate('subjectId', 'name description')
             .populate('assessmentSetupId', 'name description')
 
-        res.status(201).json({ 
-            message: "Grade-Subject assessment created", 
-            data: populated,
+        sendResponse(res, 201, true, "Grade-Subject assessment created", {
+            gsa: populated,
             usedDefault: !assessmentSetupId  // Shows if auto-used
         })
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
     }
 }
 
 export const getAllGradeSubjectAssessments = async (req: Request, res: Response): Promise<void> => {
     try {
+        // Pagination setup
+        const page = parseInt(req.query.page as string) || 1
+        let limit = parseInt(req.query.limit as string) || 10
+        limit = Math.min(limit, 50) // Max 50 per page
+        const skip = (page - 1) * limit
+
+        const total = await GradeSubjectAssessment.countDocuments()
         const gsas = await GradeSubjectAssessment.find()
             .populate('gradeId', 'level description')
             .populate('subjectId', 'name description')
             .populate('assessmentSetupId', 'name description')
             .populate('conductedStages', 'name weight')
             .sort({ 'gradeId.level': 1, 'subjectId.name': 1 })
+            .skip(skip)
+            .limit(limit)
         
-        res.status(200).json({ data: gsas })
+        sendResponse(res, 200, true, "Grade-Subject assessments fetched successfully", gsas, null, {
+            total,
+            page,
+            limit
+        })
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
     }
 }
 
@@ -95,13 +107,13 @@ export const getGradeSubjectAssessmentById = async (req: Request, res: Response)
             .populate('conductedStages', 'name weight')
         
         if (!gsa) {
-            res.status(404).json({ message: "Grade-Subject assessment not found" })
+            sendResponse(res, 404, false, "Grade-Subject assessment not found")
             return
         }
         
-        res.status(200).json({ data: gsa })
+        sendResponse(res, 200, true, "Grade-Subject assessment fetched successfully", gsa)
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
     }
 }
 
@@ -110,7 +122,7 @@ export const getByGradeLevel = async (req: Request, res: Response): Promise<void
     const { level } = req.params
     
     if (!level || isNaN(Number(level))) {
-        res.status(400).json({ message: "Valid grade level required" })
+        sendResponse(res, 400, false, "Valid grade level required")
         return
     }
 
@@ -129,13 +141,12 @@ export const getByGradeLevel = async (req: Request, res: Response): Promise<void
         // Filter out null grades
         const validGsas = gsas.filter(gsa => gsa.gradeId !== null)
         
-        res.status(200).json({ 
-            message: `Assessments for Grade ${level}`,
+        sendResponse(res, 200, true, `Assessments for Grade ${level}`, {
             count: validGsas.length,
-            data: validGsas 
+            gsas: validGsas 
         })
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
     }
 }
 
@@ -147,7 +158,7 @@ export const updateGradeSubjectAssessment = async (req: Request, res: Response):
     try {
         const gsa = await GradeSubjectAssessment.findById(id)
         if (!gsa) {
-            res.status(404).json({ message: "Grade-Subject assessment not found" })
+            sendResponse(res, 404, false, "Grade-Subject assessment not found")
             return
         }
 
@@ -157,7 +168,7 @@ export const updateGradeSubjectAssessment = async (req: Request, res: Response):
                 subjectId: gsa.subjectId 
             })
             if (existing) {
-                res.status(400).json({ message: "Assessment setup already exists for new grade + subject" })
+                sendResponse(res, 400, false, "Assessment setup already exists for new grade + subject")
                 return
             }
         }
@@ -168,7 +179,7 @@ export const updateGradeSubjectAssessment = async (req: Request, res: Response):
                 subjectId 
             })
             if (existing) {
-                res.status(400).json({ message: "Assessment setup already exists for grade + new subject" })
+                sendResponse(res, 400, false, "Assessment setup already exists for grade + new subject")
                 return
             }
         }
@@ -176,12 +187,11 @@ export const updateGradeSubjectAssessment = async (req: Request, res: Response):
         if (assessmentSetupId) {
             const setup = await AssessmentSetup.findById(assessmentSetupId)
             if (!setup) {
-                res.status(400).json({ message: "Invalid assessment setup ID" })
+                sendResponse(res, 400, false, "Invalid assessment setup ID")
                 return
             }
         }
 
-    
         gsa.gradeId = gradeId || gsa.gradeId
         gsa.subjectId = subjectId || gsa.subjectId
         gsa.assessmentSetupId = assessmentSetupId || gsa.assessmentSetupId
@@ -194,15 +204,11 @@ export const updateGradeSubjectAssessment = async (req: Request, res: Response):
             .populate('assessmentSetupId', 'name description')
             .populate('conductedStages', 'name weight')
 
-        res.status(200).json({ 
-            message: "Grade-Subject assessment updated", 
-            data: populated 
-        })
+        sendResponse(res, 200, true, "Grade-Subject assessment updated", populated)
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
     }
 }
-
 
 export const deleteGradeSubjectAssessment = async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params
@@ -210,12 +216,12 @@ export const deleteGradeSubjectAssessment = async (req: Request, res: Response):
     try {
         const gsa = await GradeSubjectAssessment.findByIdAndDelete(id)
         if (!gsa) {
-            res.status(404).json({ message: "Grade-Subject assessment not found" })
+            sendResponse(res, 404, false, "Grade-Subject assessment not found")
             return
         }
         
-        res.status(200).json({ message: "Grade-Subject assessment deleted" })
+        sendResponse(res, 200, true, "Grade-Subject assessment deleted")
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
     }
 }
