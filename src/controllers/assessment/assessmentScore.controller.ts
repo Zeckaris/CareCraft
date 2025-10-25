@@ -5,26 +5,27 @@ import { StudentEnrollment } from "../../models/studentEnrollment.model"
 import { AssessmentSetup } from "../../models/assessment/assessmentSetup.model"
 import { recalcResult,validateConducted } from "../../utils/assessment.utility"
 import { AssessmentType } from "../../models/assessment/assessmentType.model"
+import { sendResponse } from '../../utils/sendResponse.util';
 
 // BULK GENERATION (Grade + Subject → Auto Setup from GSA)
 export const generateBulkScores = async (req: Request, res: Response): Promise<void> => {
     const { gradeId, subjectId } = req.body
     
     if (!gradeId || !subjectId) {
-        res.status(400).json({ message: "Missing: gradeId, subjectId" })
+        sendResponse(res, 400, false, "Missing: gradeId, subjectId")
         return
     }
 
     try {
         const gsa = await GradeSubjectAssessment.findOne({ gradeId, subjectId })
         if (!gsa) {
-            res.status(400).json({ message: "No assessment setup assigned to this grade/subject" })
+            sendResponse(res, 400, false, "No assessment setup assigned to this grade/subject")
             return
         }
 
         const setup = await AssessmentSetup.findById(gsa.assessmentSetupId).populate('assessmentTypeIds')
         if (!setup) {
-            res.status(404).json({ message: "Assessment setup not found" })
+            sendResponse(res, 404, false, "Assessment setup not found")
             return
         }
 
@@ -36,7 +37,7 @@ export const generateBulkScores = async (req: Request, res: Response): Promise<v
         const students = enrollments.map(en => en.studentId)
 
         if (students.length === 0) {
-            res.status(400).json({ message: "No active students found" })
+            sendResponse(res, 400, false, "No active students found")
             return
         }
 
@@ -45,11 +46,11 @@ export const generateBulkScores = async (req: Request, res: Response): Promise<v
         for (const student of students) {
             const existing = await AssessmentScore.findOne({ 
                 studentId: student._id, 
-                agsaId: gsa._id
+                gsaId: gsa._id
             })
             if (existing) continue
 
-            //  NO isConducted - ONLY score + typeName!
+            // NO isConducted - ONLY score + typeName!
             const scores = setup.assessmentTypeIds.map((type: any) => ({
                 assessmentTypeId: type._id,
                 typeName: type.name,
@@ -67,12 +68,11 @@ export const generateBulkScores = async (req: Request, res: Response): Promise<v
             createdScores.push(scoreDoc._id)
         }
 
-        res.status(201).json({ 
-            message: `Generated ${createdScores.length} marksheets`, 
-            created: createdScores 
+        sendResponse(res, 201, true, `Generated ${createdScores.length} marksheets`, {
+            created: createdScores
         })
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
     }
 }
 
@@ -81,7 +81,7 @@ export const generateSingleScore = async (req: Request, res: Response): Promise<
     const { studentId, subjectId } = req.body
     
     if (!studentId || !subjectId) {
-        res.status(400).json({ message: "Missing: studentId, subjectId" })
+        sendResponse(res, 400, false, "Missing: studentId, subjectId")
         return
     }
 
@@ -91,19 +91,19 @@ export const generateSingleScore = async (req: Request, res: Response): Promise<
             isActive: true 
         }).populate('gradeId')
         if (!enrollment) {
-            res.status(404).json({ message: "Student not enrolled" })
+            sendResponse(res, 404, false, "Student not enrolled")
             return
         }
 
         const gsa = await GradeSubjectAssessment.findOne({ gradeId: enrollment.gradeId._id, subjectId })
         if (!gsa) {
-            res.status(400).json({ message: "No assessment setup for this class" })
+            sendResponse(res, 400, false, "No assessment setup for this class")
             return
         }
 
         const setup = await AssessmentSetup.findById(gsa.assessmentSetupId).populate('assessmentTypeIds')
         if (!setup) {
-            res.status(404).json({ message: "Assessment setup not found" })
+            sendResponse(res, 404, false, "Assessment setup not found")
             return
         }
 
@@ -112,11 +112,11 @@ export const generateSingleScore = async (req: Request, res: Response): Promise<
             gsaId: gsa._id 
         })
         if (existing) {
-            res.status(400).json({ message: "Marksheet exists" })
+            sendResponse(res, 400, false, "Marksheet exists")
             return
         }
 
-        // ⭐ NO isConducted!
+        // NO isConducted!
         const scores = setup.assessmentTypeIds.map((type: any) => ({
             assessmentTypeId: type._id,
             typeName: type.name,
@@ -132,9 +132,9 @@ export const generateSingleScore = async (req: Request, res: Response): Promise<
         })
         await scoreDoc.save()
 
-        res.status(201).json({ message: "Marksheet created", data: scoreDoc })
+        sendResponse(res, 201, true, "Marksheet created", scoreDoc)
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
     }
 }
 
@@ -143,7 +143,7 @@ export const generateMultipleScores = async (req: Request, res: Response): Promi
     const { studentIds, subjectId } = req.body
     
     if (!studentIds || !Array.isArray(studentIds) || !subjectId) {
-        res.status(400).json({ message: "Missing: studentIds array, subjectId" })
+        sendResponse(res, 400, false, "Missing: studentIds array, subjectId")
         return
     }
 
@@ -154,7 +154,7 @@ export const generateMultipleScores = async (req: Request, res: Response): Promi
         }).populate('gradeId')
 
         if (enrollments.length === 0) {
-            res.status(404).json({ message: "No active students" })
+            sendResponse(res, 404, false, "No active students")
             return
         }
 
@@ -202,12 +202,11 @@ export const generateMultipleScores = async (req: Request, res: Response): Promi
             }
         }
 
-        res.status(201).json({ 
-            message: `Generated ${createdScores.length} marksheets`, 
-            created: createdScores 
+        sendResponse(res, 201, true, `Generated ${createdScores.length} marksheets`, {
+            created: createdScores
         })
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
     }
 }
 
@@ -219,26 +218,24 @@ export const markStageConducted = async (req: Request, res: Response): Promise<v
     try {
         const gsa = await GradeSubjectAssessment.findById(id)
         if (!gsa) {
-            res.status(404).json({ message: "Class assessment not found" })
+            sendResponse(res, 404, false, "Class assessment not found")
             return
         }
 
         const setup = await AssessmentSetup.findById(gsa.assessmentSetupId).populate('assessmentTypeIds')
         if (!setup) {
-            res.status(404).json({ message: "Assessment setup not found" })
+            sendResponse(res, 404, false, "Assessment setup not found")
             return
         }
 
-        const populatedTypes = setup.assessmentTypeIds as any[]  // ⭐ TYPE FIX!
+        const populatedTypes = setup.assessmentTypeIds as any[]
         const typeIndex = populatedTypes.findIndex((t: any) => t._id.equals(assessmentTypeId))
 
         // VALIDATE ORDER - No skipping!
         if (typeIndex > gsa.conductedStages.length) {
             const nextExpected = populatedTypes[gsa.conductedStages.length]
             const currentAttempt = populatedTypes[typeIndex]
-            res.status(400).json({ 
-                message: `Complete "${nextExpected.name}" before "${currentAttempt.name}"`
-            })
+            sendResponse(res, 400, false, `Complete "${nextExpected.name}" before "${currentAttempt.name}"`)
             return
         }
 
@@ -247,13 +244,12 @@ export const markStageConducted = async (req: Request, res: Response): Promise<v
             await gsa.save()
         }
 
-        res.status(200).json({ 
-            message: "Stage marked conducted", 
+        sendResponse(res, 200, true, "Stage marked conducted", {
             totalStages: gsa.conductedStages.length,
             nextStage: populatedTypes[gsa.conductedStages.length]?.name || "Complete!"
         })
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
     }
 }
 
@@ -265,14 +261,13 @@ export const updateAssessmentScore = async (req: Request, res: Response): Promis
     try {
         const scoreDoc = await AssessmentScore.findById(id)
         if (!scoreDoc) {
-            res.status(404).json({ message: "Marksheet not found" })
+            sendResponse(res, 404, false, "Marksheet not found")
             return
         }
 
-        
         const gsa = await GradeSubjectAssessment.findById(scoreDoc.gsaId)
         if (!gsa) {
-            res.status(404).json({ message: "Associated GSA not found" })
+            sendResponse(res, 404, false, "Associated GSA not found")
             return
         }
         const setup = await AssessmentSetup.findById(scoreDoc.assessmentSetupId).populate('assessmentTypeIds')
@@ -288,42 +283,54 @@ export const updateAssessmentScore = async (req: Request, res: Response): Promis
         await recalcResult(scoreDoc, gsa, setup)
 
         await scoreDoc.save()
-        res.status(200).json({ message: "Marksheet updated", data: scoreDoc })
+        sendResponse(res, 200, true, "Marksheet updated", scoreDoc)
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
     }
 }
 
-// GET ALL (Filtering)
+// GET ALL (Filtering) WITH PAGINATION
 export const getAllAssessmentScores = async (req: Request, res: Response): Promise<void> => {
     const { studentId, gradeId, subjectId, assessmentSetupId } = req.query
     
     try {
-    const query: any = {}
-    if (studentId) query.studentId = studentId
-    if (assessmentSetupId) query.assessmentSetupId = assessmentSetupId
+        // Pagination setup
+        const page = parseInt(req.query.page as string) || 1
+        let limit = parseInt(req.query.limit as string) || 10
+        limit = Math.min(limit, 50) // Max 50 per page
+        const skip = (page - 1) * limit
 
-    
-    if (subjectId) {
-        const gsa = await GradeSubjectAssessment.findOne({ subjectId })
-        if (gsa) query.gsaId = gsa._id
-    }
-    if (gradeId) {
-        const gsas = await GradeSubjectAssessment.find({ gradeId })
-        if (gsas.length > 0) {
-            query.gsaId = { $in: gsas.map(g => g._id) }
+        const query: any = {}
+        if (studentId) query.studentId = studentId
+        if (assessmentSetupId) query.assessmentSetupId = assessmentSetupId
+
+        if (subjectId) {
+            const gsa = await GradeSubjectAssessment.findOne({ subjectId })
+            if (gsa) query.gsaId = gsa._id
         }
-    }
+        if (gradeId) {
+            const gsas = await GradeSubjectAssessment.find({ gradeId })
+            if (gsas.length > 0) {
+                query.gsaId = { $in: gsas.map(g => g._id) }
+            }
+        }
 
-    const scores = await AssessmentScore.find(query)
-        .populate('studentId', 'firstName lastName')
-        .populate('gsaId', 'gradeId subjectId') 
-        .populate('assessmentSetupId', 'name')
-        .sort({ 'studentId.firstName': 1 })
+        const total = await AssessmentScore.countDocuments(query)
+        const scores = await AssessmentScore.find(query)
+            .populate('studentId', 'firstName lastName')
+            .populate('gsaId', 'gradeId subjectId') 
+            .populate('assessmentSetupId', 'name')
+            .sort({ 'studentId.firstName': 1 })
+            .skip(skip)
+            .limit(limit)
 
-    res.status(200).json({ scores })
+        sendResponse(res, 200, true, "Assessment scores fetched successfully", scores, null, {
+            total,
+            page,
+            limit
+        })
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
     }
 }
 
@@ -336,12 +343,12 @@ export const getAssessmentScoreById = async (req: Request, res: Response): Promi
             .populate('gsaId', 'gradeId subjectId')                   
             .populate('assessmentSetupId', 'name assessmentTypeIds')
         if (!score) {
-            res.status(404).json({ message: "Marksheet not found" })
+            sendResponse(res, 404, false, "Marksheet not found")
             return
         }
-        res.status(200).json({ score })
+        sendResponse(res, 200, true, "Assessment score fetched successfully", score)
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
     }
 }
 
@@ -351,35 +358,34 @@ export const deleteAssessmentScore = async (req: Request, res: Response): Promis
     try {
         const score = await AssessmentScore.findByIdAndDelete(id)
         if (!score) {
-            res.status(404).json({ message: "Marksheet not found" })
+            sendResponse(res, 404, false, "Marksheet not found")
             return
         }
-        res.status(200).json({ message: "Marksheet deleted" })
+        sendResponse(res, 200, true, "Marksheet deleted")
     } catch (error) {
-        res.status(500).json({ message: "Internal server error", error })
+        sendResponse(res, 500, false, "Internal server error", null, error)
     }
 }
-
 
 // Batch update ONE type for ALL students 
 export const batchUpdateScoresForType = async (req: Request, res: Response): Promise<void> => {
     const { gsaId, assessmentTypeId, scores } = req.body
     
     if (!gsaId || !assessmentTypeId || !scores || !Array.isArray(scores)) {
-        res.status(400).json({ message: "Missing: gsaId, assessmentTypeId, scores array" })
+        sendResponse(res, 400, false, "Missing: gsaId, assessmentTypeId, scores array")
         return
     }
 
     try {
         const gsa = await GradeSubjectAssessment.findById(gsaId)
         if (!gsa) {
-            res.status(404).json({ message: "Class assessment not found" })
+            sendResponse(res, 404, false, "Class assessment not found")
             return
         }
 
         const assessmentType = await AssessmentType.findById(assessmentTypeId)
         if (!assessmentType) {
-            res.status(404).json({ message: "Assessment type not found" })
+            sendResponse(res, 404, false, "Assessment type not found")
             return
         }
         const typeName = assessmentType.name
@@ -428,14 +434,12 @@ export const batchUpdateScoresForType = async (req: Request, res: Response): Pro
         const totalSubmitted = scores.length
         const avgScore = validScores.reduce((sum, s) => sum + s.score, 0) / validScores.length || 0
 
-        res.status(200).json({ 
-            message: `Batch updated ${updated}/${totalSubmitted} students`,
+        sendResponse(res, 200, true, `Batch updated ${updated}/${totalSubmitted} students`, {
             stats: { updated, avgScore: Math.round(avgScore), errors: errors.length },
-            details: { totalSubmitted, valid: validScores.length }
+            details: { totalSubmitted, valid: validScores.length },
+            errors: errors.length > 0 ? errors : undefined
         })
     } catch (error: any) {
-        res.status(error instanceof Error ? 400 : 500).json({ 
-            message: error.message || "Internal server error" 
-        })
+        sendResponse(res, error instanceof Error ? 400 : 500, false, error.message || "Internal server error", null, error)
     }
 }
