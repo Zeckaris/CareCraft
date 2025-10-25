@@ -4,6 +4,7 @@ import { StudentBadge } from '../models/studentBadge.model';
 import { BadgeDefinition } from '../models/badgeDefinition.model';
 import { Student } from '../models/student.model';
 import UserAccount  from '../models/userAccount.model';
+import { sendResponse } from '../utils/sendResponse.util'
 
 export const getAllStudentBadges = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, studentId, badgeId, teacherId, criteriaMet } = req.query;
@@ -12,43 +13,43 @@ export const getAllStudentBadges = async (req: Request, res: Response): Promise<
   const filter: any = {};
   if (studentId) {
     if (!mongoose.isValidObjectId(studentId)) {
-      res.status(400).json({ message: 'Invalid studentId' });
+      sendResponse(res, 400, false, 'Invalid studentId');
       return;
     }
     const student = await Student.findById(studentId);
     if (!student) {
-      res.status(404).json({ message: 'Student not found' });
+      sendResponse(res, 404, false, 'Student not found');
       return;
     }
     filter.studentId = studentId;
   }
   if (badgeId) {
     if (!mongoose.isValidObjectId(badgeId)) {
-      res.status(400).json({ message: 'Invalid badgeId' });
+      sendResponse(res, 400, false, 'Invalid badgeId');
       return;
     }
     const badgeDefinition = await BadgeDefinition.findById(badgeId);
     if (!badgeDefinition) {
-      res.status(404).json({ message: 'BadgeDefinition not found' });
+      sendResponse(res, 404, false, 'BadgeDefinition not found');
       return;
     }
     filter.badgeId = badgeId;
   }
   if (teacherId) {
     if (!mongoose.isValidObjectId(teacherId)) {
-      res.status(400).json({ message: 'Invalid teacherId' });
+      sendResponse(res, 400, false, 'Invalid teacherId');
       return;
     }
     const user = await UserAccount.findById(teacherId);
     if (!user || !['admin', 'coordinator', 'teacher'].includes(user.role)) {
-      res.status(400).json({ message: 'Invalid teacherId: User does not exist or lacks required role (admin, coordinator, teacher)' });
+      sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role (admin, coordinator, teacher)');
       return;
     }
     filter.teacherId = teacherId;
   }
   if (criteriaMet !== undefined) {
     if (criteriaMet !== 'true' && criteriaMet !== 'false') {
-      res.status(400).json({ message: 'Invalid criteriaMet: must be true or false' });
+      sendResponse(res, 400, false, 'Invalid criteriaMet: must be true or false');
       return;
     }
     filter.criteriaMet = criteriaMet === 'true';
@@ -56,22 +57,22 @@ export const getAllStudentBadges = async (req: Request, res: Response): Promise<
 
   try {
     const badges = await StudentBadge.find(filter)
-      .populate('badgeId studentId teacherId')
+      .populate('badgeId', 'name description icon level')
+      .populate('studentId', 'firstName lastName')
+      .populate('teacherId', 'firstName lastName email role')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
       .lean();
     const total = await StudentBadge.countDocuments(filter);
 
-    res.status(200).json({
-      data: badges,
-      page: Number(page),
-      limit: Number(limit),
+    sendResponse(res, 200, true, 'Student badges fetched successfully', badges, null, {
       total,
-      pages: Math.ceil(total / Number(limit))
+      page: Number(page),
+      limit: Number(limit)
     });
   } catch (error) {
-    res.status(500).json({ message: `Server error fetching student badges: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error fetching student badges: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -79,19 +80,23 @@ export const getStudentBadgeById = async (req: Request, res: Response): Promise<
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid student badge ID' });
+    sendResponse(res, 400, false, 'Invalid student badge ID');
     return;
   }
 
   try {
-    const badge = await StudentBadge.findById(id).populate('badgeId studentId teacherId').lean();
+    const badge = await StudentBadge.findById(id)
+      .populate('badgeId', 'name description icon level')
+      .populate('studentId', 'firstName lastName')
+      .populate('teacherId', 'firstName lastName email role')
+      .lean();
     if (!badge) {
-      res.status(404).json({ message: 'StudentBadge not found' });
+      sendResponse(res, 404, false, 'StudentBadge not found');
       return;
     }
-    res.status(200).json({ data: badge });
+    sendResponse(res, 200, true, 'Student badge fetched successfully', badge);
   } catch (error) {
-    res.status(500).json({ message: `Server error fetching student badge: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error fetching student badge: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -100,23 +105,23 @@ export const createStudentBadge = async (req: Request, res: Response): Promise<v
 
   // Validate required fields
   if (!badgeId || !studentId || !teacherId) {
-    res.status(400).json({ message: 'Missing required fields: badgeId, studentId, or teacherId' });
+    sendResponse(res, 400, false, 'Missing required fields: badgeId, studentId, or teacherId');
     return;
   }
   if (!mongoose.isValidObjectId(badgeId)) {
-    res.status(400).json({ message: 'Invalid badgeId' });
+    sendResponse(res, 400, false, 'Invalid badgeId');
     return;
   }
   if (!mongoose.isValidObjectId(studentId)) {
-    res.status(400).json({ message: 'Invalid studentId' });
+    sendResponse(res, 400, false, 'Invalid studentId');
     return;
   }
   if (!mongoose.isValidObjectId(teacherId)) {
-    res.status(400).json({ message: 'Invalid teacherId' });
+    sendResponse(res, 400, false, 'Invalid teacherId');
     return;
   }
   if (criteriaMet !== undefined && typeof criteriaMet !== 'boolean') {
-    res.status(400).json({ message: 'criteriaMet must be a boolean' });
+    sendResponse(res, 400, false, 'criteriaMet must be a boolean');
     return;
   }
 
@@ -124,24 +129,24 @@ export const createStudentBadge = async (req: Request, res: Response): Promise<v
     // Validate referenced documents
     const badgeDefinition = await BadgeDefinition.findById(badgeId);
     if (!badgeDefinition) {
-      res.status(404).json({ message: 'BadgeDefinition not found' });
+      sendResponse(res, 404, false, 'BadgeDefinition not found');
       return;
     }
     const student = await Student.findById(studentId);
     if (!student) {
-      res.status(404).json({ message: 'Student not found' });
+      sendResponse(res, 404, false, 'Student not found');
       return;
     }
     const user = await UserAccount.findById(teacherId);
     if (!user || !['admin', 'coordinator', 'teacher'].includes(user.role)) {
-      res.status(400).json({ message: 'Invalid teacherId: User does not exist or lacks required role (admin, coordinator, teacher)' });
+      sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role (admin, coordinator, teacher)');
       return;
     }
 
     // Check for duplicate
     const existingBadge = await StudentBadge.findOne({ badgeId, studentId });
     if (existingBadge) {
-      res.status(400).json({ message: 'Student already awarded this badge' });
+      sendResponse(res, 400, false, 'Student already awarded this badge');
       return;
     }
 
@@ -152,9 +157,9 @@ export const createStudentBadge = async (req: Request, res: Response): Promise<v
       criteriaMet: criteriaMet !== undefined ? criteriaMet : false
     });
 
-    res.status(201).json({ message: 'Student badge created successfully', data: studentBadge });
+    sendResponse(res, 201, true, 'Student badge created successfully', studentBadge);
   } catch (error) {
-    res.status(500).json({ message: `Server error creating student badge: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error creating student badge: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -164,34 +169,34 @@ export const updateStudentBadge = async (req: Request, res: Response): Promise<v
 
   // Validate inputs
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid student badge ID' });
+    sendResponse(res, 400, false, 'Invalid student badge ID');
     return;
   }
   if (!badgeId && !studentId && !teacherId && criteriaMet === undefined) {
-    res.status(400).json({ message: 'At least one field (badgeId, studentId, teacherId, criteriaMet) required' });
+    sendResponse(res, 400, false, 'At least one field (badgeId, studentId, teacherId, criteriaMet) required');
     return;
   }
   if (badgeId && !mongoose.isValidObjectId(badgeId)) {
-    res.status(400).json({ message: 'Invalid badgeId' });
+    sendResponse(res, 400, false, 'Invalid badgeId');
     return;
   }
   if (studentId && !mongoose.isValidObjectId(studentId)) {
-    res.status(400).json({ message: 'Invalid studentId' });
+    sendResponse(res, 400, false, 'Invalid studentId');
     return;
   }
   if (teacherId && !mongoose.isValidObjectId(teacherId)) {
-    res.status(400).json({ message: 'Invalid teacherId' });
+    sendResponse(res, 400, false, 'Invalid teacherId');
     return;
   }
   if (criteriaMet !== undefined && typeof criteriaMet !== 'boolean') {
-    res.status(400).json({ message: 'criteriaMet must be a boolean' });
+    sendResponse(res, 400, false, 'criteriaMet must be a boolean');
     return;
   }
 
   try {
     const studentBadge = await StudentBadge.findById(id);
     if (!studentBadge) {
-      res.status(404).json({ message: 'StudentBadge not found' });
+      sendResponse(res, 404, false, 'StudentBadge not found');
       return;
     }
 
@@ -199,21 +204,21 @@ export const updateStudentBadge = async (req: Request, res: Response): Promise<v
     if (badgeId) {
       const badgeDefinition = await BadgeDefinition.findById(badgeId);
       if (!badgeDefinition) {
-        res.status(404).json({ message: 'BadgeDefinition not found' });
+        sendResponse(res, 404, false, 'BadgeDefinition not found');
         return;
       }
     }
     if (studentId) {
       const student = await Student.findById(studentId);
       if (!student) {
-        res.status(404).json({ message: 'Student not found' });
+        sendResponse(res, 404, false, 'Student not found');
         return;
       }
     }
     if (teacherId) {
       const user = await UserAccount.findById(teacherId);
       if (!user || !['admin', 'coordinator', 'teacher'].includes(user.role)) {
-        res.status(400).json({ message: 'Invalid teacherId: User does not exist or lacks required role (admin, coordinator, teacher)' });
+        sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role (admin, coordinator, teacher)');
         return;
       }
     }
@@ -225,7 +230,7 @@ export const updateStudentBadge = async (req: Request, res: Response): Promise<v
         studentId: studentId || studentBadge.studentId
       });
       if (existingBadge && existingBadge._id.toString() !== id) {
-        res.status(400).json({ message: 'Student already awarded this badge' });
+        sendResponse(res, 400, false, 'Student already awarded this badge');
         return;
       }
     }
@@ -237,11 +242,13 @@ export const updateStudentBadge = async (req: Request, res: Response): Promise<v
     if (criteriaMet !== undefined) updateData.criteriaMet = criteriaMet;
 
     const updated = await StudentBadge.findByIdAndUpdate(id, updateData, { new: true })
-      .populate('badgeId studentId teacherId')
+      .populate('badgeId', 'name description icon level')
+      .populate('studentId', 'firstName lastName')
+      .populate('teacherId', 'firstName lastName email role')
       .lean();
-    res.status(200).json({ message: 'Student badge updated successfully', data: updated });
+    sendResponse(res, 200, true, 'Student badge updated successfully', updated);
   } catch (error) {
-    res.status(500).json({ message: `Server error updating student badge: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error updating student badge: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -249,20 +256,20 @@ export const deleteStudentBadge = async (req: Request, res: Response): Promise<v
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid student badge ID' });
+    sendResponse(res, 400, false, 'Invalid student badge ID');
     return;
   }
 
   try {
     const studentBadge = await StudentBadge.findById(id);
     if (!studentBadge) {
-      res.status(404).json({ message: 'StudentBadge not found' });
+      sendResponse(res, 404, false, 'StudentBadge not found');
       return;
     }
 
     await StudentBadge.findByIdAndDelete(id);
-    res.status(200).json({ message: 'Student badge deleted successfully' });
+    sendResponse(res, 200, true, 'Student badge deleted successfully');
   } catch (error) {
-    res.status(500).json({ message: `Server error deleting student badge: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error deleting student badge: ${(error as Error).message}`, null, error);
   }
 };
