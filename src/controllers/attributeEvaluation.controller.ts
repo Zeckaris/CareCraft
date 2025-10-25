@@ -6,6 +6,7 @@ import  UserAccount from '../models/userAccount.model';
 import { StudentEnrollment } from '../models/studentEnrollment.model';
 import { BadgeCriteria } from '../models/badgeCriteria.model';
 import { AttributeCategory } from '../models/attributeCategory.model';
+import { sendResponse } from '../utils/sendResponse.util';
 
 export const getAllAttributeEvaluations = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, teacherId, studentId, enrollmentId } = req.query;
@@ -14,26 +15,26 @@ export const getAllAttributeEvaluations = async (req: Request, res: Response): P
   const filter: any = {};
   if (teacherId) {
     if (!mongoose.isValidObjectId(teacherId)) {
-      res.status(400).json({ message: 'Invalid teacherId' });
+      sendResponse(res, 400, false, 'Invalid teacherId');
       return;
     }
     const user = await UserAccount.findById(teacherId);
     if (!user || !['admin', 'teacher'].includes(user.role)) {
-      res.status(400).json({ message: 'Invalid teacherId: User does not exist or lacks required role' });
+      sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role');
       return;
     }
     filter.teacherId = teacherId;
   }
   if (studentId) {
     if (!mongoose.isValidObjectId(studentId)) {
-      res.status(400).json({ message: 'Invalid studentId' });
+      sendResponse(res, 400, false, 'Invalid studentId');
       return;
     }
     filter.studentId = studentId;
   }
   if (enrollmentId) {
     if (!mongoose.isValidObjectId(enrollmentId)) {
-      res.status(400).json({ message: 'Invalid enrollmentId' });
+      sendResponse(res, 400, false, 'Invalid enrollmentId');
       return;
     }
     filter.studentEnrollmentId = enrollmentId;
@@ -41,22 +42,23 @@ export const getAllAttributeEvaluations = async (req: Request, res: Response): P
 
   try {
     const evaluations = await AttributeEvaluation.find(filter)
-      .populate('studentId teacherId studentEnrollmentId attributes.attributeId')
+      .populate('studentId', 'firstName lastName')
+      .populate('teacherId', 'firstName lastName email role')
+      .populate('studentEnrollmentId', 'gradeId isActive')
+      .populate('attributes.attributeId', 'name description minScore maxScore')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
       .lean();
     const total = await AttributeEvaluation.countDocuments(filter);
 
-    res.status(200).json({
-      data: evaluations,
-      page: Number(page),
-      limit: Number(limit),
+    sendResponse(res, 200, true, 'Attribute evaluations fetched successfully', evaluations, null, {
       total,
-      pages: Math.ceil(total / Number(limit))
+      page: Number(page),
+      limit: Number(limit)
     });
   } catch (error) {
-    res.status(500).json({ message: `Server error fetching evaluations: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error fetching evaluations: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -66,19 +68,19 @@ export const getAttributeEvaluationsByStudent = async (req: Request, res: Respon
   const skip = (Number(page) - 1) * Number(limit);
 
   if (!mongoose.isValidObjectId(studentId)) {
-    res.status(400).json({ message: 'Invalid studentId' });
+    sendResponse(res, 400, false, 'Invalid studentId');
     return;
   }
   const student = await Student.findById(studentId);
   if (!student) {
-    res.status(404).json({ message: 'Student not found' });
+    sendResponse(res, 404, false, 'Student not found');
     return;
   }
 
   const filter: any = { studentId };
   if (enrollmentId) {
     if (!mongoose.isValidObjectId(enrollmentId)) {
-      res.status(400).json({ message: 'Invalid enrollmentId' });
+      sendResponse(res, 400, false, 'Invalid enrollmentId');
       return;
     }
     filter.studentEnrollmentId = enrollmentId;
@@ -86,22 +88,23 @@ export const getAttributeEvaluationsByStudent = async (req: Request, res: Respon
 
   try {
     const evaluations = await AttributeEvaluation.find(filter)
-      .populate('studentId teacherId studentEnrollmentId attributes.attributeId')
+      .populate('studentId', 'firstName lastName')
+      .populate('teacherId', 'firstName lastName email role')
+      .populate('studentEnrollmentId', 'gradeId isActive')
+      .populate('attributes.attributeId', 'name description minScore maxScore')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
       .lean();
     const total = await AttributeEvaluation.countDocuments(filter);
 
-    res.status(200).json({
-      data: evaluations,
-      page: Number(page),
-      limit: Number(limit),
+    sendResponse(res, 200, true, 'Student attribute evaluations fetched successfully', evaluations, null, {
       total,
-      pages: Math.ceil(total / Number(limit))
+      page: Number(page),
+      limit: Number(limit)
     });
   } catch (error) {
-    res.status(500).json({ message: `Server error fetching evaluations: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error fetching evaluations: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -111,19 +114,19 @@ export const getAttributeEvaluationsByTeacher = async (req: Request, res: Respon
   const skip = (Number(page) - 1) * Number(limit);
 
   if (!mongoose.isValidObjectId(teacherId)) {
-    res.status(400).json({ message: 'Invalid teacherId' });
+    sendResponse(res, 400, false, 'Invalid teacherId');
     return;
   }
   const user = await UserAccount.findById(teacherId);
   if (!user || !['admin', 'teacher'].includes(user.role)) {
-    res.status(400).json({ message: 'Invalid teacherId: User does not exist or lacks required role' });
+    sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role');
     return;
   }
 
   const filter: any = { teacherId };
   if (studentId) {
     if (!mongoose.isValidObjectId(studentId)) {
-      res.status(400).json({ message: 'Invalid studentId' });
+      sendResponse(res, 400, false, 'Invalid studentId');
       return;
     }
     filter.studentId = studentId;
@@ -131,44 +134,49 @@ export const getAttributeEvaluationsByTeacher = async (req: Request, res: Respon
 
   try {
     const evaluations = await AttributeEvaluation.find(filter)
-      .populate('studentId teacherId studentEnrollmentId attributes.attributeId')
+      .populate('studentId', 'firstName lastName')
+      .populate('teacherId', 'firstName lastName email role')
+      .populate('studentEnrollmentId', 'gradeId isActive')
+      .populate('attributes.attributeId', 'name description minScore maxScore')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
       .lean();
     const total = await AttributeEvaluation.countDocuments(filter);
 
-    res.status(200).json({
-      data: evaluations,
-      page: Number(page),
-      limit: Number(limit),
+    sendResponse(res, 200, true, 'Teacher attribute evaluations fetched successfully', evaluations, null, {
       total,
-      pages: Math.ceil(total / Number(limit))
+      page: Number(page),
+      limit: Number(limit)
     });
   } catch (error) {
-    res.status(500).json({ message: `Server error fetching evaluations: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error fetching evaluations: ${(error as Error).message}`, null, error);
   }
 };
+
 
 export const getAttributeEvaluationById = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid evaluation ID' });
+    sendResponse(res, 400, false, 'Invalid evaluation ID');
     return;
   }
 
   try {
     const evaluation = await AttributeEvaluation.findById(id)
-      .populate('studentId teacherId studentEnrollmentId attributes.attributeId')
+      .populate('studentId', 'firstName lastName')
+      .populate('teacherId', 'firstName lastName email role')
+      .populate('studentEnrollmentId', 'gradeId isActive')
+      .populate('attributes.attributeId', 'name description minScore maxScore')
       .lean();
     if (!evaluation) {
-      res.status(404).json({ message: 'AttributeEvaluation not found' });
+      sendResponse(res, 404, false, 'AttributeEvaluation not found');
       return;
     }
-    res.status(200).json({ data: evaluation });
+    sendResponse(res, 200, true, 'Attribute evaluation fetched successfully', evaluation);
   } catch (error) {
-    res.status(500).json({ message: `Server error fetching evaluation: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error fetching evaluation: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -177,21 +185,21 @@ export const createAttributeEvaluation = async (req: Request, res: Response): Pr
 
   // Validate required fields
   if (!studentId || !teacherId || !studentEnrollmentId || !attributes || !Array.isArray(attributes) || attributes.length === 0) {
-    res.status(400).json({ message: 'Missing required fields: studentId, teacherId, studentEnrollmentId, attributes (non-empty array)' });
+    sendResponse(res, 400, false, 'Missing required fields: studentId, teacherId, studentEnrollmentId, attributes (non-empty array)');
     return;
   }
 
   // Validate IDs
   if (!mongoose.isValidObjectId(studentId)) {
-    res.status(400).json({ message: 'Invalid studentId' });
+    sendResponse(res, 400, false, 'Invalid studentId');
     return;
   }
   if (!mongoose.isValidObjectId(teacherId)) {
-    res.status(400).json({ message: 'Invalid teacherId' });
+    sendResponse(res, 400, false, 'Invalid teacherId');
     return;
   }
   if (!mongoose.isValidObjectId(studentEnrollmentId)) {
-    res.status(400).json({ message: 'Invalid studentEnrollmentId' });
+    sendResponse(res, 400, false, 'Invalid studentEnrollmentId');
     return;
   }
 
@@ -202,13 +210,13 @@ export const createAttributeEvaluation = async (req: Request, res: Response): Pr
     typeof item.score === 'number' && item.score >= 1 && item.score <= 5 &&
     (item.comment === undefined || (typeof item.comment === 'string' && item.comment.length <= 200))
   )) {
-    res.status(400).json({ message: 'Invalid attributes: Each must have valid attributeId, score (1-5), optional comment (≤200 chars)' });
+    sendResponse(res, 400, false, 'Invalid attributes: Each must have valid attributeId, score (1-5), optional comment (≤200 chars)');
     return;
   }
 
   // Validate remark
   if (remark !== undefined && (typeof remark !== 'string' || remark.length > 500)) {
-    res.status(400).json({ message: 'Invalid remark: Must be ≤500 characters if provided' });
+    sendResponse(res, 400, false, 'Invalid remark: Must be ≤500 characters if provided');
     return;
   }
 
@@ -216,23 +224,23 @@ export const createAttributeEvaluation = async (req: Request, res: Response): Pr
     // Validate references
     const student = await Student.findById(studentId);
     if (!student) {
-      res.status(404).json({ message: 'Student not found' });
+      sendResponse(res, 404, false, 'Student not found');
       return;
     }
     const user = await UserAccount.findById(teacherId);
     if (!user || !['admin', 'teacher'].includes(user.role)) {
-      res.status(400).json({ message: 'Invalid teacherId: User does not exist or lacks required role (admin, teacher)' });
+      sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role (admin, teacher)');
       return;
     }
     const enrollment = await StudentEnrollment.findById(studentEnrollmentId);
     if (!enrollment || enrollment.studentId.toString() !== studentId) {
-      res.status(400).json({ message: 'Invalid studentEnrollmentId: Enrollment not found or does not match student' });
+      sendResponse(res, 400, false, 'Invalid studentEnrollmentId: Enrollment not found or does not match student');
       return;
     }
     for (const attr of attributes) {
       const category = await AttributeCategory.findById(attr.attributeId);
       if (!category) {
-        res.status(400).json({ message: `Invalid attributeId: ${attr.attributeId} not found` });
+        sendResponse(res, 400, false, `Invalid attributeId: ${attr.attributeId} not found`);
         return;
       }
     }
@@ -256,66 +264,68 @@ export const createAttributeEvaluation = async (req: Request, res: Response): Pr
     await evaluation.save();
 
     const populated = await AttributeEvaluation.findById(evaluation._id)
-      .populate('studentId teacherId studentEnrollmentId attributes.attributeId')
+      .populate('studentId', 'firstName lastName')
+      .populate('teacherId', 'firstName lastName email role')
+      .populate('studentEnrollmentId', 'gradeId isActive')
+      .populate('attributes.attributeId', 'name description minScore maxScore')
       .lean();
-    res.status(201).json({ message: 'Attribute evaluation created successfully', data: populated });
+    sendResponse(res, 201, true, 'Attribute evaluation created successfully', populated);
   } catch (error) {
-    res.status(500).json({ message: `Server error creating evaluation: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error creating evaluation: ${(error as Error).message}`, null, error);
   }
 };
-
 
 export const updateAttributeEvaluation = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
   const { studentId, teacherId, studentEnrollmentId, attributes, remark } = req.body;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid evaluation ID' });
+    sendResponse(res, 400, false, 'Invalid evaluation ID');
     return;
   }
   if (!studentId && !teacherId && !studentEnrollmentId && !attributes && !remark) {
-    res.status(400).json({ message: 'At least one field required for update' });
+    sendResponse(res, 400, false, 'At least one field required for update');
     return;
   }
 
   try {
     const evaluation = await AttributeEvaluation.findById(id);
     if (!evaluation) {
-      res.status(404).json({ message: 'AttributeEvaluation not found' });
+      sendResponse(res, 404, false, 'AttributeEvaluation not found');
       return;
     }
 
     // Validate inputs if provided
     if (studentId) {
       if (!mongoose.isValidObjectId(studentId)) {
-        res.status(400).json({ message: 'Invalid studentId' });
+        sendResponse(res, 400, false, 'Invalid studentId');
         return;
       }
       const student = await Student.findById(studentId);
       if (!student) {
-        res.status(404).json({ message: 'Student not found' });
+        sendResponse(res, 404, false, 'Student not found');
         return;
       }
     }
     if (teacherId) {
       if (!mongoose.isValidObjectId(teacherId)) {
-        res.status(400).json({ message: 'Invalid teacherId' });
+        sendResponse(res, 400, false, 'Invalid teacherId');
         return;
       }
       const user = await UserAccount.findById(teacherId);
       if (!user || !['admin', 'teacher'].includes(user.role)) {
-        res.status(400).json({ message: 'Invalid teacherId: User does not exist or lacks required role' });
+        sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role');
         return;
       }
     }
     if (studentEnrollmentId) {
       if (!mongoose.isValidObjectId(studentEnrollmentId)) {
-        res.status(400).json({ message: 'Invalid studentEnrollmentId' });
+        sendResponse(res, 400, false, 'Invalid studentEnrollmentId');
         return;
       }
       const enrollment = await StudentEnrollment.findById(studentEnrollmentId);
       if (!enrollment || (studentId && enrollment.studentId.toString() !== studentId)) {
-        res.status(400).json({ message: 'Invalid studentEnrollmentId: Enrollment not found or does not match student' });
+        sendResponse(res, 400, false, 'Invalid studentEnrollmentId: Enrollment not found or does not match student');
         return;
       }
     }
@@ -326,19 +336,19 @@ export const updateAttributeEvaluation = async (req: Request, res: Response): Pr
         typeof item.score === 'number' && item.score >= 1 && item.score <= 5 &&
         (item.comment === undefined || (typeof item.comment === 'string' && item.comment.length <= 200))
       )) {
-        res.status(400).json({ message: 'Invalid attributes: Each must have valid attributeId, score (1-5), optional comment (≤200 chars)' });
+        sendResponse(res, 400, false, 'Invalid attributes: Each must have valid attributeId, score (1-5), optional comment (≤200 chars)');
         return;
       }
       for (const attr of attributes) {
         const category = await AttributeCategory.findById(attr.attributeId);
         if (!category) {
-          res.status(400).json({ message: `Invalid attributeId: ${attr.attributeId} not found` });
+          sendResponse(res, 400, false, `Invalid attributeId: ${attr.attributeId} not found`);
           return;
         }
       }
     }
     if (remark !== undefined && (typeof remark !== 'string' || remark.length > 500)) {
-      res.status(400).json({ message: 'Invalid remark: Must be ≤500 characters if provided' });
+      sendResponse(res, 400, false, 'Invalid remark: Must be ≤500 characters if provided');
       return;
     }
 
@@ -350,7 +360,7 @@ export const updateAttributeEvaluation = async (req: Request, res: Response): Pr
         studentEnrollmentId: studentEnrollmentId || evaluation.studentEnrollmentId
       });
       if (existing && existing._id.toString() !== id) {
-        res.status(400).json({ message: 'An evaluation for this student and enrollment already exists' });
+        sendResponse(res, 400, false, 'An evaluation for this student and enrollment already exists');
         return;
       }
     }
@@ -365,16 +375,19 @@ export const updateAttributeEvaluation = async (req: Request, res: Response): Pr
         score: item.score,
         comment: item.comment || ''
       }));
-      updateData.totalScore = attributes.reduce((acc: number, item: any) => acc + item.score, 0); // Explicitly set totalScore
+      updateData.totalScore = attributes.reduce((acc: number, item: any) => acc + item.score, 0);
     }
     if (remark !== undefined) updateData.remark = remark;
 
     const updated = await AttributeEvaluation.findByIdAndUpdate(id, updateData, { new: true })
-      .populate('studentId teacherId studentEnrollmentId attributes.attributeId')
+      .populate('studentId', 'firstName lastName')
+      .populate('teacherId', 'firstName lastName email role')
+      .populate('studentEnrollmentId', 'gradeId isActive')
+      .populate('attributes.attributeId', 'name description minScore maxScore')
       .lean();
-    res.status(200).json({ message: 'Attribute evaluation updated successfully', data: updated });
+    sendResponse(res, 200, true, 'Attribute evaluation updated successfully', updated);
   } catch (error) {
-    res.status(500).json({ message: `Server error updating evaluation: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error updating evaluation: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -384,11 +397,11 @@ export const patchAttributeEvaluation = async (req: Request, res: Response): Pro
   const { attributes, remark } = req.body;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid evaluation ID' });
+    sendResponse(res, 400, false, 'Invalid evaluation ID');
     return;
   }
   if (!attributes && !remark) {
-    res.status(400).json({ message: 'At least one field (attributes, remark) required for update' });
+    sendResponse(res, 400, false, 'At least one field (attributes, remark) required for update');
     return;
   }
   if (attributes && (!Array.isArray(attributes) || attributes.length === 0 || !attributes.every((item: any) => 
@@ -397,18 +410,18 @@ export const patchAttributeEvaluation = async (req: Request, res: Response): Pro
     (item.score === undefined || (typeof item.score === 'number' && item.score >= 1 && item.score <= 5)) &&
     (item.comment === undefined || (typeof item.comment === 'string' && item.comment.length <= 200))
   ))) {
-    res.status(400).json({ message: 'Invalid attributes: Each must have valid attributeId, optional score (1-5), optional comment (≤200 chars)' });
+    sendResponse(res, 400, false, 'Invalid attributes: Each must have valid attributeId, optional score (1-5), optional comment (≤200 chars)');
     return;
   }
   if (remark !== undefined && (typeof remark !== 'string' || remark.length > 500)) {
-    res.status(400).json({ message: 'Invalid remark: Must be ≤500 characters if provided' });
+    sendResponse(res, 400, false, 'Invalid remark: Must be ≤500 characters if provided');
     return;
   }
 
   try {
     const evaluation = await AttributeEvaluation.findById(id);
     if (!evaluation) {
-      res.status(404).json({ message: 'AttributeEvaluation not found' });
+      sendResponse(res, 404, false, 'AttributeEvaluation not found');
       return;
     }
 
@@ -417,12 +430,12 @@ export const patchAttributeEvaluation = async (req: Request, res: Response): Pro
       for (const attr of attributes) {
         const category = await AttributeCategory.findById(attr.attributeId);
         if (!category) {
-          res.status(400).json({ message: `Invalid attributeId: ${attr.attributeId} not found` });
+          sendResponse(res, 400, false, `Invalid attributeId: ${attr.attributeId} not found`);
           return;
         }
         const existingAttr = evaluation.attributes.find(a => a.attributeId.toString() === attr.attributeId);
         if (!existingAttr) {
-          res.status(400).json({ message: `Attribute ${attr.attributeId} not found in evaluation` });
+          sendResponse(res, 400, false, `Attribute ${attr.attributeId} not found in evaluation`);
           return;
         }
       }
@@ -447,11 +460,14 @@ export const patchAttributeEvaluation = async (req: Request, res: Response): Pro
     await evaluation.save();
 
     const updated = await AttributeEvaluation.findById(id)
-      .populate('studentId teacherId studentEnrollmentId attributes.attributeId')
+      .populate('studentId', 'firstName lastName')
+      .populate('teacherId', 'firstName lastName email role')
+      .populate('studentEnrollmentId', 'gradeId isActive')
+      .populate('attributes.attributeId', 'name description minScore maxScore')
       .lean();
-    res.status(200).json({ message: 'Attribute evaluation patched successfully', data: updated });
+    sendResponse(res, 200, true, 'Attribute evaluation patched successfully', updated);
   } catch (error) {
-    res.status(500).json({ message: `Server error patching evaluation: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error patching evaluation: ${(error as Error).message}`, null, error);
   }
 };
 
@@ -459,14 +475,14 @@ export const deleteAttributeEvaluation = async (req: Request, res: Response): Pr
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ message: 'Invalid evaluation ID' });
+    sendResponse(res, 400, false, 'Invalid evaluation ID');
     return;
   }
 
   try {
     const evaluation = await AttributeEvaluation.findById(id);
     if (!evaluation) {
-      res.status(404).json({ message: 'AttributeEvaluation not found' });
+      sendResponse(res, 404, false, 'AttributeEvaluation not found');
       return;
     }
 
@@ -478,13 +494,13 @@ export const deleteAttributeEvaluation = async (req: Request, res: Response): Pr
       ]
     });
     if (dependentCriteria) {
-      res.status(400).json({ message: 'Cannot delete evaluation: Linked to badge criteria' });
+      sendResponse(res, 400, false, 'Cannot delete evaluation: Linked to badge criteria');
       return;
     }
 
     await AttributeEvaluation.findByIdAndDelete(id);
-    res.status(200).json({ message: 'Attribute evaluation deleted successfully' });
+    sendResponse(res, 200, true, 'Attribute evaluation deleted successfully');
   } catch (error) {
-    res.status(500).json({ message: `Server error deleting evaluation: ${(error as Error).message}` });
+    sendResponse(res, 500, false, `Server error deleting evaluation: ${(error as Error).message}`, null, error);
   }
 };
