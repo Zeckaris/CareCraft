@@ -78,41 +78,39 @@ export const signupUser = async (req: Request, res: Response): Promise<void> => 
 
     let studentToAssociate = null;
 
-    if (role === 'parent' || role === 'teacher') {
-      if (!inviteToken) {
-        sendResponse(res, 400, false, 'Invite token is required for this role.');
-        return;
-      }
-
-      const tokenRecord = await InviteToken.findOne({ token: inviteToken });
-      if (!tokenRecord) {
-        sendResponse(res, 400, false, 'Invalid invite token.');
-        return;
-      }
-      if (tokenRecord.role !== role) {
-        sendResponse(res, 400, false, 'Invite token role mismatch.');
-        return;
-      }
-      if (tokenRecord.isUsed || tokenRecord.expiresAt < new Date()) {
-        sendResponse(res, 400, false, 'Invite token is expired or already used.');
-        return;
-      }
-
-      if (role === 'parent') {
-        if (!tokenRecord.createdFor) {
-          sendResponse(res, 400, false, 'No student associated with this invite token.');
-          return;
-        }
-        studentToAssociate = await Student.findById(tokenRecord.createdFor);
-        if (!studentToAssociate) {
-          sendResponse(res, 404, false, 'Associated student not found.');
-          return;
-        }
-      }
-
-      tokenRecord.isUsed = true;
-      await tokenRecord.save();
+    if (!inviteToken) {
+      sendResponse(res, 400, false, 'Invite token is required for all Users.');
+      return;
     }
+
+    const tokenRecord = await InviteToken.findOne({ token: inviteToken });
+    if (!tokenRecord) {
+      sendResponse(res, 400, false, 'Invalid invite token.');
+      return;
+    }
+    if (tokenRecord.role !== role) {
+      sendResponse(res, 400, false, 'Invite token role mismatch.');
+      return;
+    }
+    if (tokenRecord.isUsed || tokenRecord.expiresAt < new Date()) {
+      sendResponse(res, 400, false, 'Invite token is expired or already used.');
+      return;
+    }
+
+    if (role === 'parent') {
+      if (!tokenRecord.createdFor) {
+        sendResponse(res, 400, false, 'No student associated with this invite token.');
+        return;
+      }
+      studentToAssociate = await Student.findById(tokenRecord.createdFor);
+      if (!studentToAssociate) {
+        sendResponse(res, 404, false, 'Associated student not found.');
+        return;
+      }
+    }
+
+    tokenRecord.isUsed = true;
+    await tokenRecord.save();
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = await UserAccount.create({
