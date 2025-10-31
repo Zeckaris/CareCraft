@@ -3,6 +3,7 @@ import { getInviteTokens, deleteInviteToken } from '../../controllers/admin/invi
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { createInviteTokenMiddleware } from '../../middlewares/createInviteToken.middleware'
 import { sendInvite } from '../../controllers/admin/inviteToken.controller'
+import { roleMiddleware } from '../../middlewares/role.middleware';
 
 const router = Router();
 
@@ -10,9 +11,9 @@ const router = Router();
 router.use(authMiddleware);
 
 
-router.post('/send-invite', authMiddleware, createInviteTokenMiddleware, sendInvite);
-router.post('/resend-invite/:tokenId', authMiddleware, sendInvite);
-router.get('/token',authMiddleware, getInviteTokens);
-router.delete('/token/:id', authMiddleware, deleteInviteToken);
+router.post('/send-invite', roleMiddleware('admin'), createInviteTokenMiddleware, sendInvite);
+router.post('/resend-invite/:tokenId', roleMiddleware('admin'), sendInvite);
+router.get('/token',roleMiddleware('admin'), getInviteTokens);
+router.delete('/token/:id', roleMiddleware('admin'), deleteInviteToken);
 
 export default router;

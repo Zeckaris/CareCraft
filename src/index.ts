@@ -2,6 +2,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import { connectDB } from './config/database';
+import cookieParser from 'cookie-parser';
 
 //Api router files
 import authRouter from './routes/auth.route';
@@ -31,11 +32,16 @@ const app= express()
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json())
-app.use(cors({
-    origin: '*',  // To be modified later
+app.use(
+  cors({
+    origin: 'http://localhost:5173', 
+    credentials: true,               // ALLOW COOKIES
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['set-cookie'],
+  })
+);
+app.use(cookieParser());
 
 app.use('/api/auth', authRouter);
 app.use("/api/general", schoolInfoRouter);

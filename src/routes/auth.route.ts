@@ -11,7 +11,7 @@ const router = express.Router()
 
 router.post('/sendVerification', sendVerification)
 router.post('/signup', signupUser)
-router.post('/login', loginUser)
+router.post('/signin', loginUser)
 
 
 router.get('/me', authMiddleware, getCurrentUser)

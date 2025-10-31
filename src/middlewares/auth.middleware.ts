@@ -7,12 +7,12 @@ interface AuthRequest extends Request {
 
 export const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const authHeader = req.headers.authorization
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ message: 'No token provided. Unauthorized.' })
-    }
+    const token = req.cookies?.jwt;
+    console.log('Cookies received:', req.cookies);
 
-    const token = authHeader.split(' ')[1]
+    if (!token) {
+      return res.status(401).json({ message: 'No token provided. Unauthorized.' });
+    }
     const decoded = verifyToken(token)
     req.user = decoded
 

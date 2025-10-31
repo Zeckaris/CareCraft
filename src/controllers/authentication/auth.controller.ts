@@ -25,10 +25,10 @@ interface SignupRequestBody {
 
 export const sendVerification = async (req: Request, res: Response) => {
   const { email } = req.body;
-  if (!email) return res.status(400).json({ message: 'Email required.' });
+  if (!email) return sendResponse(res, 400, false, 'Email required.');
 
   if (!validateEmail(email)) {
-    return res.status(400).json({ message: 'Invalid email format.' });
+    return sendResponse(res, 400, false, 'Invalid email format.');
   }
 
   const code = crypto.randomBytes(3).toString('hex').toUpperCase();
@@ -49,6 +49,7 @@ export const sendVerification = async (req: Request, res: Response) => {
     });
      sendResponse(res, 200, true, 'Verification code sent! Check your inbox.');
   } catch (error) {
+    console.error('Email error:', error);
     verificationCodes.delete(email);
     sendResponse(res, 500, false, 'Failed to send verification email.');
   }
@@ -56,10 +57,10 @@ export const sendVerification = async (req: Request, res: Response) => {
 
 
 export const signupUser = async (req: Request, res: Response): Promise<void> => {
-  const { firstName, lastName, email, password, role, phoneNumber, inviteToken, verificationCode} =
+  const { firstName, lastName, email, password, phoneNumber, inviteToken, verificationCode} =
     req.body as SignupRequestBody;
 
-  if (!firstName || !lastName || !email || !password || !role || !phoneNumber) {
+  if (!firstName || !lastName || !email || !password || !phoneNumber) {
     sendResponse(res, 400, false, 'Missing required fields.');
     return;
   }
@@ -75,7 +76,6 @@ export const signupUser = async (req: Request, res: Response): Promise<void> => 
       sendResponse(res, 400, false, codeValidation.message);
       return;
     }
-
     let studentToAssociate = null;
 
     if (!inviteToken) {
@@ -88,6 +88,7 @@ export const signupUser = async (req: Request, res: Response): Promise<void> => 
       sendResponse(res, 400, false, 'Invalid invite token.');
       return;
     }
+    const role = tokenRecord.role;
     if (tokenRecord.role !== role) {
       sendResponse(res, 400, false, 'Invite token role mismatch.');
       return;
@@ -160,8 +161,15 @@ export const loginUser= async(req: Request, res: Response): Promise<void> =>{
         user.lastLogin= lastLogin
         await user.save()
         const response= prepareUserData(user)
+        res.cookie('jwt', token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'development',
+          sameSite: 'strict',
+          maxAge: 7 * 24 * 60 * 60 * 1000, 
+          path: '/'
+        });
         
-        sendResponse(res, 200, true, 'Login successful', { token, user: response });
+        sendResponse(res, 200, true, 'Login successful', { user: response });
     }catch (error){
         sendResponse(res, 500, false, 'Internal server error');
         return
