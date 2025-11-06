@@ -8,8 +8,6 @@ interface AuthRequest extends Request {
 export const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.cookies?.jwt;
-    console.log('Cookies received:', req.cookies);
-
     if (!token) {
       return res.status(401).json({ message: 'No token provided. Unauthorized.' });
     }

@@ -128,7 +128,21 @@ export const signupUser = async (req: Request, res: Response): Promise<void> => 
       await studentToAssociate.save();
     }
 
-    sendResponse(res, 201, true, 'User created successfully.');
+    const token = generateToken(newUser);
+    res.cookie('jwt', token, { 
+      httpOnly: true,
+          secure: process.env.NODE_ENV === 'development',
+          sameSite: 'strict',
+          maxAge: 7 * 24 * 60 * 60 * 1000, 
+          path: '/'
+    });
+    newUser.lastLogin = new Date();
+    await newUser.save();
+    const userResponse = prepareUserData(newUser);
+
+    sendResponse(res, 201, true, 'User created successfully.',  {
+  user: userResponse
+});
   } catch (error) {
     sendResponse(res, 500, false, 'Internal server error.', null, error);
     return

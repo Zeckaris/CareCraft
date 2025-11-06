@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { InviteToken } from '../models/inviteToken.model';
 import jwt from 'jsonwebtoken';
+import {sendResponse} from '../utils/sendResponse.util'
 
 const JWT_SECRET = process.env.JWT_SECRET_KEY || 'defaultsecret';
 
@@ -10,7 +11,12 @@ export const createInviteTokenMiddleware = async (req: Request, res: Response, n
   // If tokenId provided, skip creation (for resend)
   if (tokenId) return next();
 
-  if (!role || (role === 'parent' && !studentId)) {
+  if (!role){
+    sendResponse(res, 400, false, 'Missing fields: role.');
+    return;
+  }
+
+  if (role === 'parent' && !studentId) {
     return res.status(400).json({ message: 'Missing fields: parent needs studentId.' });
   }
 
@@ -30,6 +36,6 @@ export const createInviteTokenMiddleware = async (req: Request, res: Response, n
     (req as any).inviteToken = newToken;
     next();
   } catch (error) {
-    res.status(500).json({ message: 'Token creation failed.' });
+    sendResponse(res, 500, false, 'Token creation failed.', null, error);
   }
 };
