@@ -1,5 +1,5 @@
 import { Schema, model, Types } from 'mongoose'
-import { IStudentEnrollment } from '../types/studentEnrollment.type'
+import { IStudentEnrollment } from '../types/studentEnrollment.type.ts'
 
 const studentEnrollmentSchema = new Schema<IStudentEnrollment>(
   {

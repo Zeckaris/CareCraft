@@ -1,5 +1,5 @@
 import { Schema, model, Types } from 'mongoose'
-import { IObservation } from '../types/observation.type'
+import { IObservation } from '../types/observation.type.ts'
 
 const observationSchema = new Schema<IObservation>(
   {

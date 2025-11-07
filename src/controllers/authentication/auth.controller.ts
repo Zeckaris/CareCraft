@@ -1,13 +1,13 @@
 import { Request, Response } from 'express';
-import UserAccount from '../../models/userAccount.model'
-import { Student } from '../../models/student.model';
-import { InviteToken } from '../../models/inviteToken.model';
+import UserAccount from '../../models/userAccount.model.ts'
+import { Student } from '../../models/student.model.ts';
+import { InviteToken } from '../../models/inviteToken.model.ts';
 import bcrypt from 'bcrypt'
-import { generateToken, prepareUserData } from '../../utils/auth.util';
+import { generateToken, prepareUserData } from '../../utils/auth.util.ts';
 import mongoose from 'mongoose';
 import { validateEmail, sendInviteEmail, validateVerificationCode, verificationCodes, transporter } from '../../utils/emailVerification.util'
 import crypto from 'crypto';
-import { sendResponse } from '../../utils/sendResponse.util';
+import { sendResponse } from '../../utils/sendResponse.util.ts';
 
 
 interface SignupRequestBody {

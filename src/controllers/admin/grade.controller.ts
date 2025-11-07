@@ -1,6 +1,6 @@
 import { Request, Response } from "express"
-import { Grade } from "../../models/grade.model"
-import { sendResponse } from "../../utils/sendResponse.util"
+import { Grade } from "../../models/grade.model.ts"
+import { sendResponse } from "../../utils/sendResponse.util.ts"
 
 
 export const createGrade= async (req:Request, res:Response):Promise<void> =>{

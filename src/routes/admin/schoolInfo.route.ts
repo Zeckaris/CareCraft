@@ -5,13 +5,15 @@ import {
   updateSchoolInfo,
   deleteSchoolInfo,
 } from "../../controllers/admin/schoolInfo.controller";
+import { createUpload } from "../../middlewares/uploads.middleware";
 
 const router = express.Router();
 
+const uploadSchoolLogo = createUpload('images/school');
 
-router.post("/school", createSchoolInfo);
+router.post("/school", uploadSchoolLogo.single('logo'), createSchoolInfo);
 router.get("/school", getSchoolInfo);
-router.put("/school", updateSchoolInfo);
+router.put("/school", uploadSchoolLogo.single('logo'), updateSchoolInfo);
 router.delete("/school", deleteSchoolInfo);
 
 export default router;

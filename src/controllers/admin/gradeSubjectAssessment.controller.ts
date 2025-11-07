@@ -1,9 +1,9 @@
 import { Request, Response } from "express"
-import { GradeSubjectAssessment } from "../../models/gradeSubjectAssessment.model"
-import { AssessmentSetup } from "../../models/assessment/assessmentSetup.model"
-import { Subject } from "../../models/subject.model"
-import { Grade } from "../../models/grade.model"
-import { sendResponse } from '../../utils/sendResponse.util'
+import { GradeSubjectAssessment } from "../../models/gradeSubjectAssessment.model.ts"
+import { AssessmentSetup } from "../../models/assessment/assessmentSetup.model.ts"
+import { Subject } from "../../models/subject.model.ts"
+import { Grade } from "../../models/grade.model.ts"
+import { sendResponse } from '../../utils/sendResponse.util.ts'
 
 // 1. CREATE - UNIQUE Grade+Subject ENFORCED
 export const createGradeSubjectAssessment = async (req: Request, res: Response): Promise<void> => {

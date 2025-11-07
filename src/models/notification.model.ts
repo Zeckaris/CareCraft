@@ -1,5 +1,5 @@
 import { Schema, model, Types } from 'mongoose'
-import { INotification } from '../types/notification.type'
+import { INotification } from '../types/notification.type.ts'
 
 const notificationSchema = new Schema<INotification>(
   {

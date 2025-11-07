@@ -1,5 +1,5 @@
 import { Schema, model, Types } from 'mongoose'
-import { IActionPlan } from '../types/actionPlan.type'
+import { IActionPlan } from '../types/actionPlan.type.ts'
 
 const actionPlanSchema = new Schema<IActionPlan>(
   {

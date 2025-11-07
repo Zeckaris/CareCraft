@@ -1,8 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { Types } from 'mongoose';
-import { SharedPlanTemplate } from '../models/sharedPlanTemplate.model';
-import { Student } from '../models/student.model';
-import { ActionPlan } from '../models/actionPlan.model';
+import { SharedPlanTemplate } from '../models/sharedPlanTemplate.model.ts';
+import { Student } from '../models/student.model.ts';
+import { ActionPlan } from '../models/actionPlan.model.ts';
 
 interface AuthRequest extends Request {
   user?: { id: string; email: string; role: 'admin' | 'teacher' | 'parent' | 'student' | 'coordinator' };

@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express'
-import { verifyToken } from '../utils/auth.util'
+import { verifyToken } from '../utils/auth.util.ts'
 
 interface AuthRequest extends Request {
   user?: any

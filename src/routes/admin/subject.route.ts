@@ -5,9 +5,9 @@ import {
   getSubjectById,
   updateSubject,
   deleteSubject
-} from '../../controllers/admin/subject.controller'
-import { authMiddleware } from '../../middlewares/auth.middleware'
-import { roleMiddleware } from '../../middlewares/role.middleware'
+} from '../../controllers/admin/subject.controller.ts'
+import { authMiddleware } from '../../middlewares/auth.middleware.ts'
+import { roleMiddleware } from '../../middlewares/role.middleware.ts'
 
 const router = express.Router()
 

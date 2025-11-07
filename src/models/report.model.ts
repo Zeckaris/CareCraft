@@ -1,5 +1,5 @@
 import { Schema, model, Types } from 'mongoose'
-import { IReport } from '../types/report.type'
+import { IReport } from '../types/report.type.ts'
 
 const reportSchema = new Schema<IReport>(
   {

@@ -6,9 +6,9 @@ import {
   getByGradeLevel,
   updateGradeSubjectAssessment,
   deleteGradeSubjectAssessment
-} from '../../controllers/admin/gradeSubjectAssessment.controller'
-import { authMiddleware } from '../../middlewares/auth.middleware'
-import { roleMiddleware } from '../../middlewares/role.middleware'
+} from '../../controllers/admin/gradeSubjectAssessment.controller.ts'
+import { authMiddleware } from '../../middlewares/auth.middleware.ts'
+import { roleMiddleware } from '../../middlewares/role.middleware.ts'
 
 const router = express.Router()
 

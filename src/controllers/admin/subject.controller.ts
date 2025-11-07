@@ -1,6 +1,6 @@
 import { Request, Response } from "express"
-import { Subject } from "../../models/subject.model"
-import { sendResponse } from "../../utils/sendResponse.util"
+import { Subject } from "../../models/subject.model.ts"
+import { sendResponse } from "../../utils/sendResponse.util.ts"
 
 export const createSubject = async (req: Request, res: Response): Promise<void> => {
     const { name, description } = req.body

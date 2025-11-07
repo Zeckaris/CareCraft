@@ -1,5 +1,5 @@
 import mongoose, { Schema, Types } from "mongoose";
-import { IGrade } from "../types/grade.type";
+import { IGrade } from "../types/grade.type.ts";
 
 const GradeSchema = new Schema<IGrade>(
   {

@@ -9,9 +9,9 @@ import {
   getAssessmentScoreById,
   deleteAssessmentScore,
   batchUpdateScoresForType
-} from '../../controllers/assessment/assessmentScore.controller'
-import { authMiddleware } from '../../middlewares/auth.middleware'
-import { roleMiddleware } from '../../middlewares/role.middleware'
+} from '../../controllers/assessment/assessmentScore.controller.ts'
+import { authMiddleware } from '../../middlewares/auth.middleware.ts'
+import { roleMiddleware } from '../../middlewares/role.middleware.ts'
 
 const router = express.Router()
 

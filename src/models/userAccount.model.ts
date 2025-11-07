@@ -1,5 +1,5 @@
 import { Schema, model } from 'mongoose'
-import { IUserAccount } from '../types/userAccount.type'
+import { IUserAccount } from '../types/userAccount.type.ts'
 
 const userAccountSchema = new Schema<IUserAccount>({
   firstName: { type: String, required: true },

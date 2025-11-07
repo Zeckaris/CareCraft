@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
-import { SchoolInfo } from "../../models/schoolInfo.model";
-import { sendResponse } from '../../utils/sendResponse.util';
+import { SchoolInfo } from "../../models/schoolInfo.model.ts";
+import { sendResponse } from '../../utils/sendResponse.util.ts';
+import path from 'path';
+import fs from 'fs';
 
 
 export const createSchoolInfo = async (req: Request, res: Response): Promise<void> => {
@@ -11,7 +13,13 @@ export const createSchoolInfo = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    const schoolInfo = new SchoolInfo(req.body);
+    const logoPath = req.file 
+      ? `/uploads/images/school/${req.file.filename}` 
+      : null;
+
+    const schoolInfo = new SchoolInfo({...req.body,
+      logo: logoPath,
+    });
     await schoolInfo.save();
 
     sendResponse(res, 201, true, "School info created successfully", schoolInfo);
@@ -42,6 +50,16 @@ export const updateSchoolInfo = async (req: Request, res: Response): Promise<voi
     if (!schoolInfo) {
       sendResponse(res, 404, false, "School info not found. Please create one first.");
       return;
+    }
+    if (req.file) {
+      // Delete old logo
+      if (schoolInfo.logo) {
+        const oldPath = path.join(__dirname, '..', '..', schoolInfo.logo);
+        if (fs.existsSync(oldPath)) {
+          fs.unlinkSync(oldPath);
+        }
+      }
+      req.body.logo = `/uploads/images/school/${req.file.filename}`;
     }
 
     const updatedInfo = await SchoolInfo.findByIdAndUpdate(schoolInfo._id, req.body, {

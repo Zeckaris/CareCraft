@@ -1,6 +1,6 @@
 import mongoose from 'mongoose'
-import { connectDB } from '../config/database'
-import { AssessmentType } from '../models/assessment/assessmentType.model'
+import { connectDB } from '../config/database.ts'
+import { AssessmentType } from '../models/assessment/assessmentType.model.ts'
 
 const DEMO_TYPES = [
   { name: 'Test 1', weight: 10, description: 'First term test' },

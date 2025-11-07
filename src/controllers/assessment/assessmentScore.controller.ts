@@ -1,11 +1,11 @@
 import { Request, Response } from "express"
-import { AssessmentScore } from "../../models/assessment/assessmentScore.model"
-import { GradeSubjectAssessment } from "../../models/gradeSubjectAssessment.model"
-import { StudentEnrollment } from "../../models/studentEnrollment.model"
-import { AssessmentSetup } from "../../models/assessment/assessmentSetup.model"
-import { recalcResult,validateConducted } from "../../utils/assessment.utility"
-import { AssessmentType } from "../../models/assessment/assessmentType.model"
-import { sendResponse } from '../../utils/sendResponse.util';
+import { AssessmentScore } from "../../models/assessment/assessmentScore.model.ts"
+import { GradeSubjectAssessment } from "../../models/gradeSubjectAssessment.model.ts"
+import { StudentEnrollment } from "../../models/studentEnrollment.model.ts"
+import { AssessmentSetup } from "../../models/assessment/assessmentSetup.model.ts"
+import { recalcResult,validateConducted } from "../../utils/assessment.utility.ts"
+import { AssessmentType } from "../../models/assessment/assessmentType.model.ts"
+import { sendResponse } from '../../utils/sendResponse.util.ts';
 
 // BULK GENERATION (Grade + Subject → Auto Setup from GSA)
 export const generateBulkScores = async (req: Request, res: Response): Promise<void> => {

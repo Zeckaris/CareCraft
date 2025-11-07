@@ -1,5 +1,5 @@
 import { Schema, model, Types } from 'mongoose'
-import { IAttributeEvaluation, IAttributeItem } from '../types/attributeEvaluation.type'
+import { IAttributeEvaluation, IAttributeItem } from '../types/attributeEvaluation.type.ts'
 
 const attributeItemSchema = new Schema<IAttributeItem>(
   {

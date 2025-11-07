@@ -1,5 +1,5 @@
 import { Schema, model, Types } from 'mongoose'
-import { IFlaggedIssue } from '../types/flaggedIssue.type'
+import { IFlaggedIssue } from '../types/flaggedIssue.type.ts'
 
 const flaggedIssueSchema = new Schema<IFlaggedIssue>(
   {

@@ -5,9 +5,9 @@ import {
   getAssessmentSetupById,
   updateAssessmentSetup,
   deleteAssessmentSetup
-} from '../../controllers/assessment/assessmentSetup.controller'
-import { authMiddleware } from '../../middlewares/auth.middleware'
-import {roleMiddleware} from '../../middlewares/role.middleware'
+} from '../../controllers/assessment/assessmentSetup.controller.ts'
+import { authMiddleware } from '../../middlewares/auth.middleware.ts'
+import {roleMiddleware} from '../../middlewares/role.middleware.ts'
 
 const router = express.Router()
 

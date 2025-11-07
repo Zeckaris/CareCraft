@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import { InviteToken } from '../models/inviteToken.model';
+import { InviteToken } from '../models/inviteToken.model.ts';
 import jwt from 'jsonwebtoken';
-import {sendResponse} from '../utils/sendResponse.util'
+import {sendResponse} from '../utils/sendResponse.util.ts'
 
 const JWT_SECRET = process.env.JWT_SECRET_KEY || 'defaultsecret';
 

@@ -1,31 +1,31 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
-import { connectDB } from './config/database';
+import { connectDB } from './config/database.ts';
 import cookieParser from 'cookie-parser';
 
 //Api router files
-import authRouter from './routes/auth.route';
-import schoolInfoRouter from './routes/admin/schoolInfo.route';
-import inviteTokenRouter from './routes/admin/inviteToken.route';
-import studentRouter from './routes/student.route';
-import { startVerificationCleanup } from './utils/emailVerification.util';
-import gradeRouter from './routes/grade.route';
-import subjectRouter from './routes/admin/subject.route';
-import assessmentTypeRoutes from './routes/assessment/assessmentType.route';
-import assessmentSetupRoutes from './routes/assessment/assessmentSetup.route';
-import assessmentScoreRoutes from './routes/assessment/assessmentScore.routes'
-import gradeSubjectAssessmentRoutes from './routes/admin/gradeSubjectAssessment.route';
-import studentEnrollmentRouter from './routes/studentEnrollment.route'
-import observationRouter from './routes/observation.route';
-import attributeRouter from './routes/attributeCategory.route';
-import badgeDefinitionRouter from './routes/badgeDefinition.route';
-import badgeCriteriaRouter from './routes/badgeCriteria.route';
-import studentBadgeRouter from './routes/studentBadge.route';
-import actionPlanRouter   from './routes/actionPlan.route';
-import attributeEvaluationRouter from './routes/attributeEvaluation.route';
-import sharedPlanTemplateRouter from './routes/sharedPlanTemplate.route';
-import adminUserRouter from './routes/admin/adminUser.route';
+import authRouter from './routes/auth.route.ts';
+import schoolInfoRouter from './routes/admin/schoolInfo.route.ts';
+import inviteTokenRouter from './routes/admin/inviteToken.route.ts';
+import studentRouter from './routes/student.route.ts';
+import { startVerificationCleanup } from './utils/emailVerification.util.ts';
+import gradeRouter from './routes/grade.route.ts';
+import subjectRouter from './routes/admin/subject.route.ts';
+import assessmentTypeRoutes from './routes/assessment/assessmentType.route.ts';
+import assessmentSetupRoutes from './routes/assessment/assessmentSetup.route.ts';
+import assessmentScoreRoutes from './routes/assessment/assessmentScore.routes.ts'
+import gradeSubjectAssessmentRoutes from './routes/admin/gradeSubjectAssessment.route.ts';
+import studentEnrollmentRouter from './routes/studentEnrollment.route.ts'
+import observationRouter from './routes/observation.route.ts';
+import attributeRouter from './routes/attributeCategory.route.ts';
+import badgeDefinitionRouter from './routes/badgeDefinition.route.ts';
+import badgeCriteriaRouter from './routes/badgeCriteria.route.ts';
+import studentBadgeRouter from './routes/studentBadge.route.ts';
+import actionPlanRouter   from './routes/actionPlan.route.ts';
+import attributeEvaluationRouter from './routes/attributeEvaluation.route.ts';
+import sharedPlanTemplateRouter from './routes/sharedPlanTemplate.route.ts';
+import adminUserRouter from './routes/admin/adminUser.route.ts';
 
 
 const app= express()

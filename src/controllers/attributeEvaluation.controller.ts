@@ -1,12 +1,12 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
-import { AttributeEvaluation } from '../models/attributeEvaluation.model';
-import { Student } from '../models/student.model';
+import { AttributeEvaluation } from '../models/attributeEvaluation.model.ts';
+import { Student } from '../models/student.model.ts';
 import  UserAccount from '../models/userAccount.model';
-import { StudentEnrollment } from '../models/studentEnrollment.model';
-import { BadgeCriteria } from '../models/badgeCriteria.model';
-import { AttributeCategory } from '../models/attributeCategory.model';
-import { sendResponse } from '../utils/sendResponse.util';
+import { StudentEnrollment } from '../models/studentEnrollment.model.ts';
+import { BadgeCriteria } from '../models/badgeCriteria.model.ts';
+import { AttributeCategory } from '../models/attributeCategory.model.ts';
+import { sendResponse } from '../utils/sendResponse.util.ts';
 
 export const getAllAttributeEvaluations = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, teacherId, studentId, enrollmentId } = req.query;

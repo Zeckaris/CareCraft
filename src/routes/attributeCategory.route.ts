@@ -5,9 +5,9 @@ import {
   createAttributeCategory,
   updateAttributeCategory,
   deleteAttributeCategory
-} from '../controllers/attributeCategory.controller';
-import { authMiddleware } from '../middlewares/auth.middleware';
-import { roleMiddleware } from '../middlewares/role.middleware';
+} from '../controllers/attributeCategory.controller.ts';
+import { authMiddleware } from '../middlewares/auth.middleware.ts';
+import { roleMiddleware } from '../middlewares/role.middleware.ts';
 
 const router = express.Router();
 

@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import { StudentEnrollment } from '../models/studentEnrollment.model';
-import { Student } from '../models/student.model';
+import { StudentEnrollment } from '../models/studentEnrollment.model.ts';
+import { Student } from '../models/student.model.ts';
 import mongoose from 'mongoose';
-import { sendResponse } from '../utils/sendResponse.util';
+import { sendResponse } from '../utils/sendResponse.util.ts';
 
 const getCurrentSchoolYear = (): string => {
   const now = new Date()

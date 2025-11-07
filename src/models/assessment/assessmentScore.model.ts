@@ -1,5 +1,5 @@
 import { Schema, model, Types } from 'mongoose'
-import { IAssessmentScore } from '../../types/assessment/assessmentScore.type'
+import { IAssessmentScore } from '../../types/assessment/assessmentScore.type.ts'
 
 const assessmentScoreSchema = new Schema<IAssessmentScore>(
   {

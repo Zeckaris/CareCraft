@@ -1,7 +1,7 @@
-import {getAllActionPlans, getActionPlanById, createActionPlan, updateActionPlan, deleteActionPlan, getActionPlansByStudent, getActionPlansByTeacher, updateActionPlanStep} from '../controllers/actionPlan.controller';
+import {getAllActionPlans, getActionPlanById, createActionPlan, updateActionPlan, deleteActionPlan, getActionPlansByStudent, getActionPlansByTeacher, updateActionPlanStep} from '../controllers/actionPlan.controller.ts';
 import express from 'express';
-import { authMiddleware } from '../middlewares/auth.middleware';
-import { roleMiddleware } from '../middlewares/role.middleware';
+import { authMiddleware } from '../middlewares/auth.middleware.ts';
+import { roleMiddleware } from '../middlewares/role.middleware.ts';
 
 const router = express.Router();
 

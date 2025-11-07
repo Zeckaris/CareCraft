@@ -9,9 +9,9 @@ import {
   deleteEnrollment,
   getGradeEnrollments,
   bulkCreateEnrollments
-} from '../controllers/studentEnrollment.controller'
-import { authMiddleware } from '../middlewares/auth.middleware'
-import { roleMiddleware } from '../middlewares/role.middleware'
+} from '../controllers/studentEnrollment.controller.ts'
+import { authMiddleware } from '../middlewares/auth.middleware.ts'
+import { roleMiddleware } from '../middlewares/role.middleware.ts'
 
 const router = express.Router()
 

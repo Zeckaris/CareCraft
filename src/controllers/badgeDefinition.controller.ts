@@ -1,12 +1,12 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
-import { BadgeDefinition } from '../models/badgeDefinition.model';
-import { BadgeCriteria } from '../models/badgeCriteria.model';
-import { StudentBadge } from '../models/studentBadge.model';
-import { AttributeCategory } from '../models/attributeCategory.model';
-import { ActionPlan } from '../models/actionPlan.model';
-import  UserAccount  from '../models/userAccount.model';
-import { sendResponse } from '../utils/sendResponse.util';
+import { BadgeDefinition } from '../models/badgeDefinition.model.ts';
+import { BadgeCriteria } from '../models/badgeCriteria.model.ts';
+import { StudentBadge } from '../models/studentBadge.model.ts';
+import { AttributeCategory } from '../models/attributeCategory.model.ts';
+import { ActionPlan } from '../models/actionPlan.model.ts';
+import  UserAccount  from '../models/userAccount.model.ts';
+import { sendResponse } from '../utils/sendResponse.util.ts';
 export const getAllBadgeDefinitions = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, name, level, attributeCategoryId } = req.query;
   const skip = (Number(page) - 1) * Number(limit);

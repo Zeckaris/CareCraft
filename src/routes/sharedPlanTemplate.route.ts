@@ -1,7 +1,7 @@
 import express from 'express';
-import { authMiddleware } from '../middlewares/auth.middleware';
-import { roleMiddleware } from '../middlewares/role.middleware';
-import { templateOwnershipMiddleware } from '../middlewares/templateAuthorization.middleware';
+import { authMiddleware } from '../middlewares/auth.middleware.ts';
+import { roleMiddleware } from '../middlewares/role.middleware.ts';
+import { templateOwnershipMiddleware } from '../middlewares/templateAuthorization.middleware.ts';
 import {
   createTemplateFromActionPlan,
   getAllTemplates,
@@ -10,7 +10,7 @@ import {
   rateTemplate,
   updateTemplate,
   deleteTemplate,
-} from '../controllers/sharedPlanTemplate.controller';
+} from '../controllers/sharedPlanTemplate.controller.ts';
 
 const router = express.Router();
 

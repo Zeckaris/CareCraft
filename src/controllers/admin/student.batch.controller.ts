@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
-import { Student } from '../../models/student.model';
-import { parseAndCleanStudentExcel } from '../../utils/parseAndCleanStudentExcel.utility';
+import { Student } from '../../models/student.model.ts';
+import { parseAndCleanStudentExcel } from '../../utils/parseAndCleanStudentExcel.utility.ts';
 import multer from 'multer';
 import { extname } from 'path';
-import { sendResponse } from '../../utils/sendResponse.util'; 
+import { sendResponse } from '../../utils/sendResponse.util.ts'; 
 
 const storage = multer.memoryStorage();
 const upload = multer({

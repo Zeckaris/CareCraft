@@ -1,5 +1,5 @@
 import { Schema, model, Types } from 'mongoose';
-import { IBadgeCriteria } from '../types/badgeCriteria.type';
+import { IBadgeCriteria } from '../types/badgeCriteria.type.ts';
 
 const badgeCriteriaSchema = new Schema<IBadgeCriteria>(
   {

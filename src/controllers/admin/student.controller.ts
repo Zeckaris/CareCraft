@@ -1,8 +1,8 @@
 import { Request, Response } from 'express'
-import { Student } from '../../models/student.model'
+import { Student } from '../../models/student.model.ts'
 import mongoose from 'mongoose'
-import { StudentEnrollment } from '../../models/studentEnrollment.model'
-import { sendResponse } from '../../utils/sendResponse.util' 
+import { StudentEnrollment } from '../../models/studentEnrollment.model.ts'
+import { sendResponse } from '../../utils/sendResponse.util.ts' 
 
 
 

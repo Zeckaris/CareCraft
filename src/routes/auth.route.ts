@@ -3,9 +3,9 @@ import {
   signupUser,
   loginUser,
   getCurrentUser
-} from '../controllers/authentication/auth.controller'
-import { authMiddleware } from '../middlewares/auth.middleware'
-import { sendVerification } from '../controllers/authentication/auth.controller'
+} from '../controllers/authentication/auth.controller.ts'
+import { authMiddleware } from '../middlewares/auth.middleware.ts'
+import { sendVerification } from '../controllers/authentication/auth.controller.ts'
 
 const router = express.Router()
 

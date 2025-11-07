@@ -1,5 +1,5 @@
 import { Schema, model, Types } from 'mongoose'
-import { ISharedPlanTemplate, IActionStep } from '../types/sharedPlanTemplate.type'
+import { ISharedPlanTemplate, IActionStep } from '../types/sharedPlanTemplate.type.ts'
 
 const actionStepSchema = new Schema<IActionStep>(
   {

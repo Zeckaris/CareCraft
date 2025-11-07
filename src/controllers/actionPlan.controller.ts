@@ -1,10 +1,10 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
-import { ActionPlan } from '../models/actionPlan.model';
-import { Student } from '../models/student.model';
-import  UserAccount  from '../models/userAccount.model';
-import { BadgeCriteria } from '../models/badgeCriteria.model';
-import { sendResponse } from '../utils/sendResponse.util'
+import { ActionPlan } from '../models/actionPlan.model.ts';
+import { Student } from '../models/student.model.ts';
+import  UserAccount  from '../models/userAccount.model.ts';
+import { BadgeCriteria } from '../models/badgeCriteria.model.ts';
+import { sendResponse } from '../utils/sendResponse.util.ts'
 
 export const getAllActionPlans = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, teacherId, startDate, endDate } = req.query;

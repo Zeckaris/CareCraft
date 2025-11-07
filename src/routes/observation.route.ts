@@ -10,9 +10,9 @@ import {
   getObservationsByTeacher,
   getObservationsByStudentAndDate,
   getObservationsByCategoryAndGrade
-} from '../controllers/observation.controller';
-import { authMiddleware } from '../middlewares/auth.middleware';
-import { roleMiddleware } from '../middlewares/role.middleware';
+} from '../controllers/observation.controller.ts';
+import { authMiddleware } from '../middlewares/auth.middleware.ts';
+import { roleMiddleware } from '../middlewares/role.middleware.ts';
 
 const router = express.Router();
 

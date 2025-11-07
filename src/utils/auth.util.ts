@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken'
-import { IUserAccount } from '../types/userAccount.type'
+import { IUserAccount } from '../types/userAccount.type.ts'
 import { profile } from 'console'
 
 const secretKey= process.env.JWT_SECRET_KEY as string 

@@ -1,13 +1,13 @@
 import express from 'express';
-import { authMiddleware } from '../middlewares/auth.middleware';
-import { roleMiddleware } from '../middlewares/role.middleware';
+import { authMiddleware } from '../middlewares/auth.middleware.ts';
+import { roleMiddleware } from '../middlewares/role.middleware.ts';
 import {
   getAllStudentBadges,
   getStudentBadgeById,
   createStudentBadge,
   updateStudentBadge,
   deleteStudentBadge
-} from '../controllers/studentBadge.controller';
+} from '../controllers/studentBadge.controller.ts';
 
 const router = express.Router();
 

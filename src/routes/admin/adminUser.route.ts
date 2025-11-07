@@ -1,7 +1,7 @@
 import express from 'express';
-import { getAllTeachers, getAllParents } from '../../controllers/admin/adminUser.controller';
-import { authMiddleware } from '../../middlewares/auth.middleware';
-import { roleMiddleware } from '../../middlewares/role.middleware';
+import { getAllTeachers, getAllParents } from '../../controllers/admin/adminUser.controller.ts';
+import { authMiddleware } from '../../middlewares/auth.middleware.ts';
+import { roleMiddleware } from '../../middlewares/role.middleware.ts';
 
 const router = express.Router();
 
