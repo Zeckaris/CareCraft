@@ -140,9 +140,7 @@ export const signupUser = async (req: Request, res: Response): Promise<void> => 
     await newUser.save();
     const userResponse = prepareUserData(newUser);
 
-    sendResponse(res, 201, true, 'User created successfully.',  {
-  user: userResponse
-});
+    sendResponse(res, 201, true, 'Account created and logged in!', { user: userResponse});
   } catch (error) {
     sendResponse(res, 500, false, 'Internal server error.', null, error);
     return
@@ -182,7 +180,6 @@ export const loginUser= async(req: Request, res: Response): Promise<void> =>{
           maxAge: 7 * 24 * 60 * 60 * 1000, 
           path: '/'
         });
-        
         sendResponse(res, 200, true, 'Login successful', { user: response });
     }catch (error){
         sendResponse(res, 500, false, 'Internal server error');
