@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import { connectDB } from './config/database.ts';
 import cookieParser from 'cookie-parser';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 //Api router files
 import authRouter from './routes/auth.route.ts';
@@ -27,6 +29,10 @@ import attributeEvaluationRouter from './routes/attributeEvaluation.route.ts';
 import sharedPlanTemplateRouter from './routes/sharedPlanTemplate.route.ts';
 import adminUserRouter from './routes/admin/adminUser.route.ts';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const rootDir = path.resolve(__dirname, '..');
+
 
 const app= express()
 
@@ -42,6 +48,10 @@ app.use(
   })
 );
 app.use(cookieParser());
+app.use('/uploads', express.static(path.join(rootDir, 'uploads')));
+
+
+
 
 app.use('/api/auth', authRouter);
 app.use("/api/general", schoolInfoRouter);

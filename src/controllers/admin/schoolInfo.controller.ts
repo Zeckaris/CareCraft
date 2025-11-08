@@ -3,6 +3,9 @@ import { SchoolInfo } from "../../models/schoolInfo.model.ts";
 import { sendResponse } from '../../utils/sendResponse.util.ts';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 
 export const createSchoolInfo = async (req: Request, res: Response): Promise<void> => {

@@ -4,8 +4,8 @@ import {
   getSchoolInfo,
   updateSchoolInfo,
   deleteSchoolInfo,
-} from "../../controllers/admin/schoolInfo.controller";
-import { createUpload } from "../../middlewares/uploads.middleware";
+} from "../../controllers/admin/schoolInfo.controller.ts";
+import { createUpload } from "../../middlewares/uploads.middleware.ts";
 
 const router = express.Router();
 
