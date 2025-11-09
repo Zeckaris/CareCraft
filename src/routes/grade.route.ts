@@ -3,7 +3,8 @@ import {
   createGrade,
   getAllGrades,
   getGradeById,
-  deleteGrade
+  deleteGrade,
+  updateGrade
 } from '../controllers/admin/grade.controller.ts' 
 import { authMiddleware} from '../middlewares/auth.middleware.ts' 
 import { roleMiddleware } from '../middlewares/role.middleware.ts'
@@ -17,6 +18,7 @@ router.get('/', getAllGrades)
 router.post('/', authMiddleware, roleMiddleware('admin'), createGrade)
 
 router.get('/:id', getGradeById)
+router.put('/:id', authMiddleware, roleMiddleware('admin'), updateGrade);
 router.delete('/:id', authMiddleware,  roleMiddleware('admin'), deleteGrade)
 
 export default router
