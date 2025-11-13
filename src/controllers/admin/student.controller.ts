@@ -44,28 +44,41 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
 
 export const getAllStudents = async (req: Request, res: Response): Promise<void> => {
   try {
-    const page = parseInt(req.query.page as string) || 1
-    let limit = parseInt(req.query.limit as string) || 10
-    limit = Math.min(limit, 50) // Max 50 per page
-    const skip = (page - 1) * limit
+    const page = parseInt(req.query.page as string) || 1;
+    let limit = parseInt(req.query.limit as string) || 10;
+    limit = Math.min(limit, 50);
+    const skip = (page - 1) * limit;
 
-    const total = await Student.countDocuments()
+    const { gradeId } = req.query; // <-- NEW
 
-    const students = await Student.find()
-      .populate('enrollmentId', 'gradeId schoolYear isActive')
+    // Build filter
+    const filter: any = {};
+    if (gradeId) {
+      filter['enrollmentId.gradeId'] = gradeId;
+    }
+
+    const total = await Student.countDocuments(filter);
+
+    const students = await Student.find(filter)
+      .populate({
+        path: 'enrollmentId',
+        select: 'gradeId schoolYear isActive',
+        populate: { path: 'gradeId', select: 'level' }
+      })
       .populate('parentId', 'firstName lastName email phoneNumber')
       .skip(skip)
       .limit(limit)
-    
+      .sort({ createdAt: -1 });
+
     sendResponse(res, 200, true, 'Students fetched successfully.', students, null, {
       total,
       page,
       limit
-    })
+    });
   } catch (error) {
-    sendResponse(res, 500, false, 'Error fetching students.', null, error)
+    sendResponse(res, 500, false, 'Error fetching students.', null, error);
   }
-}
+};
 
 
 export const getStudentById = async (req: Request, res: Response): Promise<void> => {
