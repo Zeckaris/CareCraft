@@ -17,8 +17,12 @@ const router = express.Router()
 router.post('/', authMiddleware, roleMiddleware('admin', 'coordinator'),createStudent)
 router.post('/batch', authMiddleware, roleMiddleware('admin', 'coordinator'), batchCreateStudents);
 
-router.get('/', authMiddleware, getAllStudents)
-router.get('/', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), getStudentsByGrade)
+router.get('/', authMiddleware, async (req, res) => {
+  if (req.query.gradeId) {
+    return getStudentsByGrade(req, res);
+  }
+  return getAllStudents(req, res);
+});
 router.get('/:id', authMiddleware, getStudentById)
 router.put('/:id', authMiddleware, roleMiddleware('admin', 'coordinator'), updateStudent)
 router.delete('/:id', authMiddleware,roleMiddleware('admin', 'coordinator'), deleteStudent)
