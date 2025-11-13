@@ -2,6 +2,7 @@ import { Request, Response } from "express"
 import { Grade } from "../../models/grade.model.ts"
 import { sendResponse } from "../../utils/sendResponse.util.ts"
 import { Types } from "mongoose"
+import { StudentEnrollment } from "../../models/studentEnrollment.model.ts"
 
 
 export const createGrade= async (req:Request, res:Response):Promise<void> =>{
@@ -116,6 +117,16 @@ export const deleteGrade= async (req:Request, res:Response):Promise<void> =>{
         if (!grade){
             sendResponse(res, 404, false, "Grade not found")
             return
+        }
+        const enrollmentCount = await StudentEnrollment.countDocuments({ gradeId: id });
+        if (enrollmentCount > 0) {
+        sendResponse(
+            res,
+            400,
+            false,
+            `Cannot delete "${grade.level}" — ${enrollmentCount} enrollment(s) linked. Remove them first.`
+        );
+        return;
         }
         sendResponse(res, 200, true, "Grade deleted successfully")
         return
