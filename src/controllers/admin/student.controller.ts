@@ -49,7 +49,7 @@ export const getAllStudents = async (req: Request, res: Response): Promise<void>
     limit = Math.min(limit, 50);
     const skip = (page - 1) * limit;
 
-    const { gradeId } = req.query; // <-- NEW
+    const { gradeId } = req.query; 
 
     // Build filter
     const filter: any = {};
