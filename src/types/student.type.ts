@@ -5,7 +5,7 @@ export interface IStudent extends Document {
   firstName: string
   middleName?: string
   lastName: string
-  gender: string
+  gender: 'M' | 'F'
   dateOfBirth: Date
   enrollmentId: Types.ObjectId | null
   parentId: Types.ObjectId | null

@@ -6,7 +6,7 @@ const studentSchema = new Schema<IStudent>(
     firstName: { type: String, required: true, trim: true },
     middleName: { type: String, default: '' },
     lastName: { type: String, required: true, trim: true },
-    gender: { type: String, required: true, trim: true },
+    gender: { type: String, enum : ['M', 'F'], required: true, trim: true },
     dateOfBirth: { type: Date, required: true },
     enrollmentId: { type: Schema.Types.ObjectId, ref: 'StudentEnrollment', required: false },
     parentId: { type: Schema.Types.ObjectId, ref: 'UserAccount', required: false, default: null },

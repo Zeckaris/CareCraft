@@ -28,6 +28,7 @@ import actionPlanRouter   from './routes/actionPlan.route.ts';
 import attributeEvaluationRouter from './routes/attributeEvaluation.route.ts';
 import sharedPlanTemplateRouter from './routes/sharedPlanTemplate.route.ts';
 import adminUserRouter from './routes/admin/adminUser.route.ts';
+import dashboardRouter from './routes/frontendServicingRoutes/dashboard.route.ts'
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -73,6 +74,7 @@ app.use('/api/studentBadge', studentBadgeRouter);
 app.use('/api/actionPlan', actionPlanRouter);
 app.use('/api/sharedPlanTemplate', sharedPlanTemplateRouter);
 app.use('/api/adminUser', adminUserRouter);
+app.use('/api/dashboard', dashboardRouter)
 
 
 connectDB().then(() => {

@@ -21,6 +21,12 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
     return
   }
 
+  const normalizedGender = gender.trim().charAt(0).toUpperCase()
+  if (!['M', 'F'].includes(normalizedGender)) {
+    sendResponse(res, 400, false, 'Gender must be M or F (e.g., Male, Female, m, f).')
+    return
+  }
+
   const admissionDate= Date.now()
 
   try {
@@ -28,7 +34,7 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
       firstName,
       middleName,
       lastName,
-      gender,
+      gender: normalizedGender,
       dateOfBirth,
       admissionDate,
       profileImage,
@@ -111,6 +117,17 @@ export const updateStudent = async (req: Request, res: Response): Promise<void> 
   if (!mongoose.Types.ObjectId.isValid(id)) {
     sendResponse(res, 400, false, 'Invalid student ID.')
     return
+  }
+
+  const { gender } = req.body
+
+  if (gender !== undefined) {
+    const normalizedGender = gender.trim().charAt(0).toUpperCase()
+    if (!['M', 'F'].includes(normalizedGender)) {
+      sendResponse(res, 400, false, 'Gender must be M or F (e.g., Male, Female, m, f).')
+      return
+    }
+    req.body.gender = normalizedGender
   }
 
   try {
