@@ -1,10 +1,18 @@
 import jwt from 'jsonwebtoken'
 import { IUserAccount } from '../types/userAccount.type.ts'
 import { profile } from 'console'
+import { Types } from 'mongoose'
 
 const secretKey= process.env.JWT_SECRET_KEY as string 
 const tokenExpirationTime = parseInt(process.env.JWT_TOKEN_EXPIRES_IN || '604800', 10)
-
+interface JWTPayload {
+  id: string | Types.ObjectId;
+  email: string;
+  role: string;
+  firstName: string;
+  iat?: number;
+  exp?: number;
+}
 
 export const generateToken = (user: IUserAccount) =>{
     const payload= {
@@ -17,9 +25,9 @@ export const generateToken = (user: IUserAccount) =>{
     return token
 }
 
-export const verifyToken= (token: string):any =>{
+export const verifyToken= (token: string):JWTPayload =>{
     try{
-        return jwt.verify(token, secretKey)
+        return jwt.verify(token, secretKey)as JWTPayload;
     }catch(erro){
         throw new Error('Invalid token')
     }

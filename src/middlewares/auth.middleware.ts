@@ -1,8 +1,14 @@
 import { Request, Response, NextFunction } from 'express'
 import { verifyToken } from '../utils/auth.util.ts'
+import { Types } from 'mongoose';
 
-interface AuthRequest extends Request {
-  user?: any
+export interface AuthRequest extends Request {
+  user?: {
+    id: string | Types.ObjectId;
+    email: string;
+    role: string;
+    firstName: string;
+  };
 }
 
 export const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -12,7 +18,12 @@ export const authMiddleware = (req: AuthRequest, res: Response, next: NextFuncti
       return res.status(401).json({ message: 'No token provided. Unauthorized.' });
     }
     const decoded = verifyToken(token)
-    req.user = decoded
+    req.user = {
+      id: decoded.id,
+      email: decoded.email,
+      role: decoded.role,
+      firstName: decoded.firstName,
+    };
 
     next()
   } catch (error) {

@@ -1,12 +1,14 @@
 import { Request, Response } from 'express'
 import { Student } from '../../models/student.model.ts'
-import mongoose from 'mongoose'
+import mongoose, { Types } from 'mongoose'
 import { StudentEnrollment } from '../../models/studentEnrollment.model.ts'
 import { sendResponse } from '../../utils/sendResponse.util.ts' 
+import { logAudit } from '../../utils/auditLogger.util.ts'
+import { AuthRequest } from '../../middlewares/auth.middleware.ts'
 
 
 
-export const createStudent = async (req: Request, res: Response): Promise<void> => {
+export const createStudent = async (req: AuthRequest, res: Response): Promise<void> => {
   const {
     firstName,
     middleName,
@@ -39,6 +41,14 @@ export const createStudent = async (req: Request, res: Response): Promise<void> 
       admissionDate,
       profileImage,
     })
+
+    await logAudit(req, {
+    type: 'student_create',
+    action: 'created',
+    entity: `${newStudent.firstName} ${newStudent.lastName}`,
+    target: '', 
+  });
+
 
     sendResponse(res, 201, true, 'Student created successfully.', newStudent)
   } catch (error) {
@@ -111,7 +121,7 @@ export const getStudentById = async (req: Request, res: Response): Promise<void>
 }
 
 
-export const updateStudent = async (req: Request, res: Response): Promise<void> => {
+export const updateStudent = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -136,6 +146,13 @@ export const updateStudent = async (req: Request, res: Response): Promise<void> 
       sendResponse(res, 404, false, 'Student not found.')
       return
     }
+
+    await logAudit(req, {
+    type: 'student_update',
+    action: 'updated',
+    entity: `${updatedStudent.firstName} ${updatedStudent.lastName}`,
+    target: '', 
+  });
     sendResponse(res, 200, true, 'Student updated successfully.', updatedStudent)
   } catch (error) {
     sendResponse(res, 500, false, 'Error updating student.', null, error)
@@ -144,7 +161,7 @@ export const updateStudent = async (req: Request, res: Response): Promise<void> 
 }
 
 
-export const deleteStudent = async (req: Request, res: Response): Promise<void> => {
+export const deleteStudent = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -158,6 +175,12 @@ export const deleteStudent = async (req: Request, res: Response): Promise<void> 
       sendResponse(res, 404, false, 'Student not found.')
       return
     }
+await logAudit(req, {
+    type: 'student_delete',
+    action: 'deleted',
+    entity: `${deletedStudent.firstName} ${deletedStudent.lastName}`,
+    target: '', 
+  });
     sendResponse(res, 200, true, 'Student deleted successfully.')
   } catch (error) {
      sendResponse(res, 500, false, 'Error deleting student.', null, error)

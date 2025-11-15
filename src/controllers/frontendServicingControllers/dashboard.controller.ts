@@ -4,6 +4,7 @@ import { StudentEnrollment } from '../../models/studentEnrollment.model'
 import { Grade } from '../../models/grade.model'
 import UserAccount from '../../models/userAccount.model'
 import { sendResponse } from '../../utils/sendResponse.util'
+import { AuditLog } from '../../models/auditLog.model';
 
 // Extract start year from "2024-25" → 2024
 const extractStartYear = (schoolYear: string): number => {
@@ -18,6 +19,7 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       totalTeachers,
       genderCounts,
       enrollmentRaw,
+      recentActivities
     ] = await Promise.all([
       // 1. Total Students
       Student.countDocuments(),
@@ -73,7 +75,15 @@ export const getDashboardStats = async (req: Request, res: Response) => {
           },
         },
       ]),
+
+    AuditLog.find()
+    .sort({ createdAt: -1 })
+    .limit(7)
+    .lean(),
+
     ]);
+
+    
 
     // Transform enrollment into pivot: { grade, 2023, 2024, 2025 }
     const gradeMap = new Map<string, any>();
@@ -92,6 +102,15 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       return numA - numB;
     });
 
+    const formattedActivities = recentActivities.map(a => ({
+    id: a._id.toString(),
+    action: a.type,            
+    entity: a.message,         
+    target: '',              
+    user: a.actor.toString(),  
+    timestamp: a.createdAt  
+    }));
+
     const data = {
       summary: {
         totalStudents,
@@ -104,6 +123,7 @@ export const getDashboardStats = async (req: Request, res: Response) => {
             { name: 'Female', value: 0 },
           ],
       enrollmentTrend,
+      recentActivities: formattedActivities,
     };
 
     return sendResponse(
