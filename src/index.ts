@@ -64,7 +64,7 @@ app.use('/api/assessment/type', assessmentTypeRoutes);
 app.use('/api/assessment/setup', assessmentSetupRoutes);
 app.use('/api/assessment/scores', assessmentScoreRoutes);
 app.use('/api/assessment/gsa', gradeSubjectAssessmentRoutes);
-app.use('/api/enrollement', studentEnrollmentRouter);
+app.use('/api/enrollment', studentEnrollmentRouter);
 app.use('/api/observation', observationRouter);
 app.use('/api/attribute', attributeRouter);
 app.use('/api/attributeEvaluation', attributeEvaluationRouter);

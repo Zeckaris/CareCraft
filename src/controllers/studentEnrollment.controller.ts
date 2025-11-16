@@ -12,18 +12,44 @@ const getCurrentSchoolYear = (): string => {
 }
 
 export const getAllEnrollments = async (req: Request, res: Response): Promise<void> => {
-  const { page = 1, limit = 10, schoolYear, isActive } = req.query;
+  const { page = 1, limit = 10, gradeId, schoolYear, isActive, search } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
 
-  const filter: any = { isActive: true };
+  const filter: any = {};
+  if (gradeId) filter.gradeId = gradeId;
   if (schoolYear) filter.schoolYear = schoolYear;
   if (isActive !== undefined) filter.isActive = isActive === 'true';
 
   try {
-    const enrollments = await StudentEnrollment.find(filter)
+    let query = StudentEnrollment.find(filter)
+      .populate('studentId', 'firstName middleName lastName profileImage')
+      .populate('gradeId', 'level')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit));
+
+    if (search) {
+      const students = await Student.find({
+        $or: [
+          { firstName: { $regex: search, $options: 'i' } },
+          { middleName: { $regex: search, $options: 'i' } },
+          { lastName: { $regex: search, $options: 'i' } },
+        ]
+      }).select('_id');
+
+      const studentIds = students.map(s => s._id);
+      if (studentIds.length === 0) {
+        sendResponse(res, 200, true, 'Enrollments fetched successfully', [], null, {
+          total: 0,
+          page: Number(page),
+          limit: Number(limit)
+        });
+        return;
+      }
+      query = query.where('studentId').in(studentIds);
+    }
+
+    const enrollments = await query;
     const total = await StudentEnrollment.countDocuments(filter);
 
     sendResponse(res, 200, true, 'Enrollments fetched successfully', enrollments, null, {
@@ -35,6 +61,7 @@ export const getAllEnrollments = async (req: Request, res: Response): Promise<vo
     sendResponse(res, 500, false, 'Server error fetching enrollments.', null, error);
   }
 };
+
 
 export const getStudentEnrollments = async (req: Request, res: Response): Promise<void> => {
   const { studentId } = req.params;
