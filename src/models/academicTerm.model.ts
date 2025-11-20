@@ -21,7 +21,7 @@ const academicTermSchema = new Schema<IAcademicTerm>(
 
 academicTermSchema.pre('save', async function (next) {
   if (this.isCurrent) {
-    await mongoose.model('AcademicTerm').updateMany(
+    await (this.constructor as any).updateMany(
       { _id: { $ne: this._id } },
       { isCurrent: false }
     );

@@ -13,3 +13,15 @@ const AcademicCalendarSchema = new Schema<IAcademicCalendar>({
     timestamps: true
 
 })
+
+AcademicCalendarSchema.pre('save', async function(next) {
+    if (this.isCurrent) {
+        await (this.constructor as any).updateMany(
+            { _id: { $ne: this._id } },
+            { isCurrent: false }
+        );
+    }
+    next();
+});
+
+export const AcademicCalendar = model<IAcademicCalendar>('AcademicCalendar', AcademicCalendarSchema)
