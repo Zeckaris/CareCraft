@@ -31,6 +31,7 @@ import adminUserRouter from './routes/admin/adminUser.route.ts';
 import dashboardRouter from './routes/frontendServicingRoutes/dashboard.route.ts'
 import academicCalendarRouter from './routes/academicCalendar.route.ts'
 import academicTermRouter from './routes/academicTerm.route.ts'
+import conductedAssessmentRouter from './routes/conductedAssessment.route.ts'
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -76,9 +77,10 @@ app.use('/api/studentBadge', studentBadgeRouter);
 app.use('/api/actionPlan', actionPlanRouter);
 app.use('/api/sharedPlanTemplate', sharedPlanTemplateRouter);
 app.use('/api/adminUser', adminUserRouter);
-app.use('/api/dashboard', dashboardRouter)
-app.use('/api/calendar', academicCalendarRouter)
-app.use('/api/term', academicTermRouter)
+app.use('/api/dashboard', dashboardRouter);
+app.use('/api/calendar', academicCalendarRouter);
+app.use('/api/term', academicTermRouter);
+app.use('/api/assessment/conducted', conductedAssessmentRouter);
 
 
 connectDB().then(() => {

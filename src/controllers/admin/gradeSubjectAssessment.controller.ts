@@ -5,7 +5,8 @@ import { Subject } from "../../models/subject.model.ts"
 import { Grade } from "../../models/grade.model.ts"
 import { sendResponse } from '../../utils/sendResponse.util.ts'
 
-// 1. CREATE - UNIQUE Grade+Subject ENFORCED
+
+
 export const createGradeSubjectAssessment = async (req: Request, res: Response): Promise<void> => {
     const { gradeId, subjectId, assessmentSetupId } = req.body
     
@@ -49,8 +50,8 @@ export const createGradeSubjectAssessment = async (req: Request, res: Response):
         const newGSA = new GradeSubjectAssessment({
             gradeId,
             subjectId,
-            assessmentSetupId: finalSetupId,
-            conductedStages: [] 
+            assessmentSetupId: finalSetupId
+            // conductedStages removed
         })
         await newGSA.save()
 
@@ -58,10 +59,11 @@ export const createGradeSubjectAssessment = async (req: Request, res: Response):
             .populate('gradeId', 'level description')
             .populate('subjectId', 'name description')
             .populate('assessmentSetupId', 'name description')
+            // .populate('conductedStages', 'name weight') → removed
 
         sendResponse(res, 201, true, "Grade-Subject assessment created", {
             gsa: populated,
-            usedDefault: !assessmentSetupId  // Shows if auto-used
+            usedDefault: !assessmentSetupId
         })
     } catch (error) {
         sendResponse(res, 500, false, "Internal server error", null, error)
@@ -70,10 +72,9 @@ export const createGradeSubjectAssessment = async (req: Request, res: Response):
 
 export const getAllGradeSubjectAssessments = async (req: Request, res: Response): Promise<void> => {
     try {
-        // Pagination setup
         const page = parseInt(req.query.page as string) || 1
         let limit = parseInt(req.query.limit as string) || 10
-        limit = Math.min(limit, 50) // Max 50 per page
+        limit = Math.min(limit, 50)
         const skip = (page - 1) * limit
 
         const total = await GradeSubjectAssessment.countDocuments()
@@ -81,7 +82,7 @@ export const getAllGradeSubjectAssessments = async (req: Request, res: Response)
             .populate('gradeId', 'level description')
             .populate('subjectId', 'name description')
             .populate('assessmentSetupId', 'name description')
-            .populate('conductedStages', 'name weight')
+            // .populate('conductedStages', 'name weight') → removed
             .sort({ 'gradeId.level': 1, 'subjectId.name': 1 })
             .skip(skip)
             .limit(limit)
@@ -104,7 +105,7 @@ export const getGradeSubjectAssessmentById = async (req: Request, res: Response)
             .populate('gradeId', 'level description')
             .populate('subjectId', 'name description')
             .populate('assessmentSetupId', 'name description')
-            .populate('conductedStages', 'name weight')
+            // .populate('conductedStages', 'name weight') → removed
         
         if (!gsa) {
             sendResponse(res, 404, false, "Grade-Subject assessment not found")
@@ -117,7 +118,6 @@ export const getGradeSubjectAssessmentById = async (req: Request, res: Response)
     }
 }
 
-// FILTER BY GRADE LEVEL
 export const getByGradeLevel = async (req: Request, res: Response): Promise<void> => {
     const { level } = req.params
     
@@ -135,10 +135,9 @@ export const getByGradeLevel = async (req: Request, res: Response): Promise<void
             })
             .populate('subjectId', 'name description')
             .populate('assessmentSetupId', 'name description')
-            .populate('conductedStages', 'name weight')
+            // .populate('conductedStages', 'name weight') → removed
             .sort({ 'subjectId.name': 1 })
         
-        // Filter out null grades
         const validGsas = gsas.filter(gsa => gsa.gradeId !== null)
         
         sendResponse(res, 200, true, `Assessments for Grade ${level}`, {
@@ -150,7 +149,6 @@ export const getByGradeLevel = async (req: Request, res: Response): Promise<void
     }
 }
 
-// UPDATE - Maintain Uniqueness
 export const updateGradeSubjectAssessment = async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params
     const { gradeId, subjectId, assessmentSetupId } = req.body
@@ -202,7 +200,7 @@ export const updateGradeSubjectAssessment = async (req: Request, res: Response):
             .populate('gradeId', 'level description')
             .populate('subjectId', 'name description')
             .populate('assessmentSetupId', 'name description')
-            .populate('conductedStages', 'name weight')
+            // .populate('conductedStages', 'name weight') → removed
 
         sendResponse(res, 200, true, "Grade-Subject assessment updated", populated)
     } catch (error) {
@@ -210,6 +208,7 @@ export const updateGradeSubjectAssessment = async (req: Request, res: Response):
     }
 }
 
+// delete function unchanged — no conductedStages reference
 export const deleteGradeSubjectAssessment = async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params
     

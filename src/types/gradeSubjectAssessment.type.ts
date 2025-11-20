@@ -5,7 +5,6 @@ export interface IGradeSubjectAssessment extends Document {
   gradeId: Types.ObjectId
   subjectId: Types.ObjectId
   assessmentSetupId: Types.ObjectId
-  conductedStages: Types.ObjectId[]
   createdAt: Date
   updatedAt: Date
 }
