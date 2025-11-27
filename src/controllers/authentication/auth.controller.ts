@@ -208,3 +208,19 @@ export const getCurrentUser= async (req:Request, res: Response):Promise<void> =>
     
 }
 
+export const signout = async (req: Request, res: Response): Promise<void> => {
+  try {
+
+    res.clearCookie('jwt', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'development', 
+      sameSite: 'strict',
+      path: '/',
+    });
+
+    sendResponse(res, 200, true, 'Logged out successfully');
+  } catch (error) {
+    sendResponse(res, 500, false, 'Logout failed', null, error);
+  }
+};
+

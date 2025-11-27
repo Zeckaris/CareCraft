@@ -2,7 +2,8 @@ import express from 'express'
 import {
   signupUser,
   loginUser,
-  getCurrentUser
+  getCurrentUser,
+  signout
 } from '../controllers/authentication/auth.controller.ts'
 import { authMiddleware } from '../middlewares/auth.middleware.ts'
 import { sendVerification } from '../controllers/authentication/auth.controller.ts'
@@ -12,6 +13,7 @@ const router = express.Router()
 router.post('/sendVerification', sendVerification)
 router.post('/signup', signupUser)
 router.post('/signin', loginUser)
+router.post('/signout', signout)
 
 
 router.get('/me', authMiddleware, getCurrentUser)
