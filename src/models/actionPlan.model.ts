@@ -9,7 +9,12 @@ const actionPlanSchema = new Schema<IActionPlan>(
     goal: { type: String, required: true, trim: true, minlength: 5, maxlength: 500 },
     actionSteps: [{
       step: { type: String, required: true, trim: true, minlength: 5, maxlength: 500 },
-      completed: { type: Boolean, default: false }
+      completed: { type: Boolean, default: false },
+      responsibleParty: {  
+        type: String,
+        enum: ['teacher', 'parent', 'either'],
+        default: 'teacher'
+      }
     }],
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true }

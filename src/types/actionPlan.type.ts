@@ -4,6 +4,7 @@ import { Document, Types } from 'mongoose'
 export interface IActionStep {
   step: string
   completed: boolean
+  responsibleParty: 'teacher' | 'parent' | 'either'
 }
 
 export interface IActionPlan extends Document {

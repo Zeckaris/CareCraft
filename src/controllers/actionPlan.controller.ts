@@ -6,6 +6,9 @@ import  UserAccount  from '../models/userAccount.model.ts';
 import { BadgeCriteria } from '../models/badgeCriteria.model.ts';
 import { sendResponse } from '../utils/sendResponse.util.ts'
 
+
+const VALID_RESPONSIBLE_PARTIES = ['teacher', 'parent', 'either'] as const;
+
 export const getAllActionPlans = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, teacherId, startDate, endDate } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
@@ -214,15 +217,15 @@ export const createActionPlan = async (req: Request, res: Response): Promise<voi
     return;
   }
 
-  // Validate actionSteps structure
   if (!actionSteps.every((item: any) => 
     item && 
     typeof item.step === 'string' && 
     item.step.trim().length >= 5 && 
     item.step.trim().length <= 500 &&
-    (item.completed === undefined || typeof item.completed === 'boolean')
+    (item.completed === undefined || typeof item.completed === 'boolean') &&
+    (item.responsibleParty === undefined || VALID_RESPONSIBLE_PARTIES.includes(item.responsibleParty))
   )) {
-    sendResponse(res, 400, false, 'Invalid actionSteps: Each must have step (5–500 chars) and optional completed (boolean)');
+    sendResponse(res, 400, false, 'Invalid actionSteps: Each must have step (5–500 chars), optional completed (boolean), and optional responsibleParty ("teacher", "parent", or "either")');
     return;
   }
 
@@ -277,7 +280,8 @@ export const createActionPlan = async (req: Request, res: Response): Promise<voi
       goal: goal.trim(),
       actionSteps: actionSteps.map((item: any) => ({
         step: item.step.trim(),
-        completed: item.completed || false
+        completed: item.completed ?? false,
+        responsibleParty: item.responsibleParty ?? 'teacher'  // Uses model default if not provided
       })),
       startDate: start,
       endDate: end
@@ -292,7 +296,6 @@ export const createActionPlan = async (req: Request, res: Response): Promise<voi
     sendResponse(res, 500, false, `Server error creating action plan: ${(error as Error).message}`, null, error);
   }
 };
-
 
 export const updateActionPlan = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
@@ -345,18 +348,28 @@ export const updateActionPlan = async (req: Request, res: Response): Promise<voi
       sendResponse(res, 400, false, 'Invalid goal: Must be 5–500 characters');
       return;
     }
+
+    // Updated actionSteps validation with responsibleParty
     if (actionSteps) {
-      if (!Array.isArray(actionSteps) || actionSteps.length === 0 || !actionSteps.every((item: any) => 
+      if (!Array.isArray(actionSteps) || actionSteps.length === 0) {
+        sendResponse(res, 400, false, 'actionSteps must be a non-empty array');
+        return;
+      }
+      if (!actionSteps.every((item: any) => 
         item && 
         typeof item.step === 'string' && 
         item.step.trim().length >= 5 && 
         item.step.trim().length <= 500 &&
-        (item.completed === undefined || typeof item.completed === 'boolean')
+        (item.completed === undefined || typeof item.completed === 'boolean') &&
+        (item.responsibleParty === undefined || VALID_RESPONSIBLE_PARTIES.includes(item.responsibleParty))
       )) {
-        sendResponse(res, 400, false, 'Invalid actionSteps: Each must have step (5–500 chars) and optional completed (boolean)');
+        sendResponse(res, 400, false, 'Invalid actionSteps: Each must have step (5–500 chars), optional completed (boolean), and optional responsibleParty ("teacher", "parent", or "either")');
         return;
       }
     }
+
+    // Date validation
+    let finalStartDate = actionPlan.startDate;
     if (startDate) {
       const start = new Date(startDate);
       if (isNaN(start.getTime())) {
@@ -369,28 +382,32 @@ export const updateActionPlan = async (req: Request, res: Response): Promise<voi
         sendResponse(res, 400, false, 'startDate must be today or in the future');
         return;
       }
+      finalStartDate = start;
     }
+
+    let finalEndDate = actionPlan.endDate;
     if (endDate) {
       const end = new Date(endDate);
       if (isNaN(end.getTime())) {
         sendResponse(res, 400, false, 'Invalid endDate');
         return;
       }
-      const start = startDate ? new Date(startDate) : actionPlan.startDate;
-      const maxEndDate = new Date(start);
+      const maxEndDate = new Date(finalStartDate);
       maxEndDate.setMonth(maxEndDate.getMonth() + 6);
       if (end > maxEndDate) {
         sendResponse(res, 400, false, 'endDate must be within 6 months of startDate');
         return;
       }
-      if (end < start) {
+      if (end < finalStartDate) {
         sendResponse(res, 400, false, 'endDate must be on or after startDate');
         return;
       }
+      finalEndDate = end;
     }
 
     // Check duplicate issue if changing student or issue
-    if ((studentId && studentId !== actionPlan.studentId.toString()) || (issue && issue.trim() !== actionPlan.issue)) {
+    if ((studentId && studentId.toString() !== actionPlan.studentId.toString()) || 
+        (issue && issue.trim() !== actionPlan.issue)) {
       const existingPlan = await ActionPlan.findOne({
         studentId: studentId || actionPlan.studentId,
         issue: issue ? issue.trim() : actionPlan.issue
@@ -401,21 +418,24 @@ export const updateActionPlan = async (req: Request, res: Response): Promise<voi
       }
     }
 
-    const updateData: any = {};
-    if (studentId) updateData.studentId = studentId;
-    if (teacherId) updateData.teacherId = teacherId;
-    if (issue) updateData.issue = issue.trim();
-    if (goal) updateData.goal = goal.trim();
+    // Apply updates
+    if (studentId) actionPlan.studentId = studentId;
+    if (teacherId) actionPlan.teacherId = teacherId;
+    if (issue) actionPlan.issue = issue.trim();
+    if (goal) actionPlan.goal = goal.trim();
     if (actionSteps) {
-      updateData.actionSteps = actionSteps.map((item: any) => ({
+      actionPlan.actionSteps = actionSteps.map((item: any) => ({
         step: item.step.trim(),
-        completed: item.completed ?? false
+        completed: item.completed ?? false,
+        responsibleParty: item.responsibleParty ?? 'teacher'
       }));
     }
-    if (startDate) updateData.startDate = new Date(startDate);
-    if (endDate) updateData.endDate = new Date(endDate);
+    if (startDate) actionPlan.startDate = finalStartDate;
+    if (endDate) actionPlan.endDate = finalEndDate;
 
-    const updated = await ActionPlan.findByIdAndUpdate(id, updateData, { new: true })
+    await actionPlan.save();
+
+    const updated = await ActionPlan.findById(id)
       .populate('studentId', 'firstName lastName')
       .populate('teacherId', 'firstName lastName email role')
       .lean({ virtuals: true });
@@ -428,7 +448,7 @@ export const updateActionPlan = async (req: Request, res: Response): Promise<voi
 
 export const updateActionPlanStep = async (req: Request, res: Response): Promise<void> => {
   const { id, stepIndex } = req.params;
-  const { step, completed } = req.body;
+  const { step, completed, responsibleParty } = req.body;  // Added responsibleParty
 
   if (!mongoose.isValidObjectId(id)) {
     sendResponse(res, 400, false, 'Invalid action plan ID');
@@ -439,6 +459,7 @@ export const updateActionPlanStep = async (req: Request, res: Response): Promise
     sendResponse(res, 400, false, 'Invalid stepIndex: Must be a non-negative number');
     return;
   }
+
   if (step !== undefined && (typeof step !== 'string' || step.trim().length < 5 || step.trim().length > 500)) {
     sendResponse(res, 400, false, 'Invalid step: Must be 5–500 characters if provided');
     return;
@@ -447,8 +468,12 @@ export const updateActionPlanStep = async (req: Request, res: Response): Promise
     sendResponse(res, 400, false, 'Invalid completed: Must be a boolean if provided');
     return;
   }
-  if (step === undefined && completed === undefined) {
-    sendResponse(res, 400, false, 'At least one field (step, completed) required for update');
+  if (responsibleParty !== undefined && !VALID_RESPONSIBLE_PARTIES.includes(responsibleParty)) {
+    sendResponse(res, 400, false, 'Invalid responsibleParty: Must be "teacher", "parent", or "either"');
+    return;
+  }
+  if (step === undefined && completed === undefined && responsibleParty === undefined) {
+    sendResponse(res, 400, false, 'At least one field (step, completed, responsibleParty) required for update');
     return;
   }
 
@@ -469,6 +494,9 @@ export const updateActionPlanStep = async (req: Request, res: Response): Promise
     if (completed !== undefined) {
       actionPlan.actionSteps[index].completed = completed;
     }
+    if (responsibleParty !== undefined) {
+      actionPlan.actionSteps[index].responsibleParty = responsibleParty;
+    }
 
     await actionPlan.save();
 
@@ -481,7 +509,6 @@ export const updateActionPlanStep = async (req: Request, res: Response): Promise
     sendResponse(res, 500, false, `Server error updating action plan step: ${(error as Error).message}`, null, error);
   }
 };
-
 
 export const deleteActionPlan = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
