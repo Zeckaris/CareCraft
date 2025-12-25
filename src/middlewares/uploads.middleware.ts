@@ -23,15 +23,41 @@ export const createUpload = (folderPath: string) => {
     storage,
     limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
     fileFilter: (req, file, cb) => {
-      const isImage = folderPath.includes('image');
-      const allowed = isImage
-        ? /^image\//
-        : /^(application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument)/;
+      // List of folders that should accept images
+      const imageFolders = [
+        'icons/badges',
+        'logos',              // e.g. school logo
+        'avatars',
+        'images',             // fallback for any folder with "image"
+        'icons',
+      ];
 
-      if (allowed.test(file.mimetype)) {
-        cb(null, true);
+      const isImageFolder = imageFolders.some(folder => 
+        folderPath.includes(folder) || folderPath.includes('image')
+      );
+
+      if (isImageFolder) {
+        const allowedImageTypes = [
+          'image/jpeg',
+          'image/jpg',
+          'image/png',
+          'image/gif',
+          'image/webp',
+          'image/svg+xml',
+        ];
+        if (allowedImageTypes.includes(file.mimetype)) {
+          cb(null, true);
+        } else {
+          cb(new Error(`Invalid image type for ${folderPath}. Allowed: JPEG, PNG, GIF, WebP, SVG`));
+        }
       } else {
-        cb(new Error(`Invalid file type for ${folderPath}`));
+        // Non-image folders (e.g. documents)
+        const allowedDocTypes = /^(application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument)/;
+        if (allowedDocTypes.test(file.mimetype)) {
+          cb(null, true);
+        } else {
+          cb(new Error(`Invalid file type for ${folderPath}`));
+        }
       }
     },
   });
