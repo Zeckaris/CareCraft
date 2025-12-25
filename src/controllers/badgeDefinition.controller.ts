@@ -7,6 +7,24 @@ import { AttributeCategory } from '../models/attributeCategory.model.ts';
 import { ActionPlan } from '../models/actionPlan.model.ts';
 import  UserAccount  from '../models/userAccount.model.ts';
 import { sendResponse } from '../utils/sendResponse.util.ts';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+
+interface AuthRequest extends Request {
+  user?: {
+    id: string;
+    email: string;
+    role: 'admin' | 'teacher' | 'parent' | 'student' | 'coordinator';
+  };
+  file?: Express.Multer.File;
+}
+
+
 export const getAllBadgeDefinitions = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, name, level, attributeCategoryId } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
@@ -67,27 +85,29 @@ export const getBadgeDefinitionById = async (req: Request, res: Response): Promi
   }
 };
 
-export const createBadgeDefinition = async (req: Request, res: Response): Promise<void> => {
-  let { name, description, icon, createdBy, level, criteria } = req.body;
+export const createBadgeDefinition = async (req: AuthRequest, res: Response): Promise<void> => {
+  let { name, description, level, criteria = [] } = req.body;
 
-  // Sanitize inputs
+  // Sanitize
   name = name?.trim();
   description = description?.trim();
-  icon = icon?.trim();
 
-  // Validate required fields and formats
-  if (!name || !description || !createdBy || !level) {
-    sendResponse(res, 400, false, 'Missing required fields: name, description, createdBy, or level');
+  if (!name || !description || level === undefined) {
+    sendResponse(res, 400, false, 'Missing required fields: name, description, or level');
     return;
   }
-  if (!mongoose.isValidObjectId(createdBy)) {
-    sendResponse(res, 400, false, 'Invalid createdBy ID');
+
+  const createdBy = req.user?.id;
+  if (!createdBy || !mongoose.isValidObjectId(createdBy)) {
+    sendResponse(res, 401, false, 'Authentication error: invalid or missing user');
     return;
   }
-  if (criteria && !criteria.every((id: string) => mongoose.isValidObjectId(id))) {
+
+  if (criteria.length > 0 && !criteria.every((id: string) => mongoose.isValidObjectId(id))) {
     sendResponse(res, 400, false, 'Invalid criteria ID(s)');
     return;
   }
+
   if (name.length > 100) {
     sendResponse(res, 400, false, 'Name must be 100 characters or less');
     return;
@@ -96,18 +116,17 @@ export const createBadgeDefinition = async (req: Request, res: Response): Promis
   try {
     const user = await UserAccount.findById(createdBy);
     if (!user || !['admin', 'coordinator', 'teacher'].includes(user.role)) {
-      sendResponse(res, 400, false, 'Invalid createdBy: User does not exist or lacks required role (admin, coordinator, teacher)');
+      sendResponse(res, 403, false, 'Access denied: user lacks required role');
       return;
     }
 
-    // Check for duplicate badge
     const existingBadge = await BadgeDefinition.findOne({ name, level });
     if (existingBadge) {
       sendResponse(res, 400, false, 'Badge definition with this name and level already exists');
       return;
     }
 
-    if (criteria && criteria.length > 0) {
+    if (criteria.length > 0) {
       const validCriteria = await BadgeCriteria.find({ _id: { $in: criteria } });
       if (validCriteria.length !== criteria.length) {
         sendResponse(res, 400, false, 'One or more criteria IDs are invalid');
@@ -125,56 +144,52 @@ export const createBadgeDefinition = async (req: Request, res: Response): Promis
       }
     }
 
+    // Handle icon upload
+    let iconPath = '';
+    if (req.file) {
+      iconPath = `/uploads/icons/badges/${req.file.filename}`;
+    }
+
     const badge = await BadgeDefinition.create({
       name,
       description,
-      icon: icon || '',
+      icon: iconPath,
       createdBy,
       level,
-      criteria: criteria || []
+      criteria,
     });
 
-    if (criteria && criteria.length > 0) {
+    if (criteria.length > 0) {
       await BadgeCriteria.updateMany(
         { _id: { $in: criteria } },
         { $set: { badgeDefinitionId: badge._id } }
       );
     }
 
-    sendResponse(res, 201, true, 'Badge definition created successfully', badge);
+    const populated = await BadgeDefinition.findById(badge._id)
+      .populate('criteria', 'type attributeCategoryId minScore actionPlanId minProgress minObservations scope')
+      .populate('createdBy', 'firstName lastName email role');
+
+    sendResponse(res, 201, true, 'Badge definition created successfully', populated);
   } catch (error) {
     sendResponse(res, 500, false, `Server error creating badge definition: ${(error as Error).message}`, null, error);
   }
 };
 
-export const updateBadgeDefinition = async (req: Request, res: Response): Promise<void> => {
+export const updateBadgeDefinition = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  let { name, description, icon, createdBy, level, criteria } = req.body;
+  let { name, description, level, criteria } = req.body;
 
-  // Sanitize inputs
   name = name?.trim();
   description = description?.trim();
-  icon = icon?.trim();
 
-  // Validate inputs
   if (!mongoose.isValidObjectId(id)) {
     sendResponse(res, 400, false, 'Invalid badge definition ID');
     return;
   }
-  if (!name && !description && icon === undefined && level === undefined && !criteria && !createdBy) {
-    sendResponse(res, 400, false, 'At least one field (name, description, icon, level, criteria, createdBy) required');
-    return;
-  }
-  if (createdBy && !mongoose.isValidObjectId(createdBy)) {
-    sendResponse(res, 400, false, 'Invalid createdBy ID');
-    return;
-  }
-  if (criteria && !criteria.every((id: string) => mongoose.isValidObjectId(id))) {
-    sendResponse(res, 400, false, 'Invalid criteria ID(s)');
-    return;
-  }
-  if (name && name.length > 100) {
-    sendResponse(res, 400, false, 'Name must be 100 characters or less');
+
+  if (!name && !description && level === undefined && criteria === undefined && !req.file) {
+    sendResponse(res, 400, false, 'At least one field (name, description, level, criteria, or icon) required');
     return;
   }
 
@@ -185,25 +200,20 @@ export const updateBadgeDefinition = async (req: Request, res: Response): Promis
       return;
     }
 
-    // Validate createdBy if provided
-    if (createdBy) {
-      const user = await UserAccount.findById(createdBy);
-      if (!user || !['admin', 'coordinator', 'teacher'].includes(user.role)) {
-        sendResponse(res, 400, false, 'Invalid createdBy: User does not exist or lacks required role (admin, coordinator, teacher)');
-        return;
-      }
-    }
-
-    // Check for duplicate badge
-    if (name && level && (name !== badge.name || level !== badge.level)) {
-      const existingBadge = await BadgeDefinition.findOne({ name, level });
-      if (existingBadge) {
+    // Duplicate check if name or level changing
+    if ((name && name !== badge.name) || (level !== undefined && level !== badge.level)) {
+      const existing = await BadgeDefinition.findOne({
+        name: name || badge.name,
+        level: level !== undefined ? level : badge.level,
+        _id: { $ne: id }
+      });
+      if (existing) {
         sendResponse(res, 400, false, 'Badge definition with this name and level already exists');
         return;
       }
     }
 
-    // Validate criteria (if provided)
+    // Validate criteria if provided
     if (criteria && criteria.length > 0) {
       const validCriteria = await BadgeCriteria.find({ _id: { $in: criteria } });
       if (validCriteria.length !== criteria.length) {
@@ -211,14 +221,6 @@ export const updateBadgeDefinition = async (req: Request, res: Response): Promis
         return;
       }
       for (const crit of validCriteria) {
-        if (crit.attributeCategoryId && !(await AttributeCategory.findById(crit.attributeCategoryId))) {
-          sendResponse(res, 400, false, `Invalid attributeCategoryId in criteria: ${crit._id}`);
-          return;
-        }
-        if (crit.actionPlanId && !(await ActionPlan.findById(crit.actionPlanId))) {
-          sendResponse(res, 400, false, `Invalid actionPlanId in criteria: ${crit._id}`);
-          return;
-        }
         if (!crit.badgeDefinitionId.equals(id)) {
           sendResponse(res, 400, false, `Criteria ${crit._id} does not belong to this badge definition`);
           return;
@@ -229,13 +231,25 @@ export const updateBadgeDefinition = async (req: Request, res: Response): Promis
     const updateData: any = {};
     if (name) updateData.name = name;
     if (description) updateData.description = description;
-    if (icon !== undefined) updateData.icon = icon;
     if (level !== undefined) updateData.level = level;
     if (criteria) updateData.criteria = criteria;
-    if (createdBy) updateData.createdBy = createdBy;
+
+    // Handle icon upload and old file deletion
+    if (req.file) {
+      // Delete old icon if exists
+      if (badge.icon) {
+        const oldPath = path.join(__dirname, '..', '..', badge.icon);
+        if (fs.existsSync(oldPath)) {
+          fs.unlinkSync(oldPath);
+        }
+      }
+      updateData.icon = `/uploads/icons/badges/${req.file.filename}`;
+    }
 
     const updated = await BadgeDefinition.findByIdAndUpdate(id, updateData, { new: true })
-      .populate('criteria', 'type attributeCategoryId minScore actionPlanId minProgress minObservations scope');
+      .populate('criteria', 'type attributeCategoryId minScore actionPlanId minProgress minObservations scope')
+      .populate('createdBy', 'firstName lastName email role');
+
     sendResponse(res, 200, true, 'Badge definition updated successfully', updated);
   } catch (error) {
     sendResponse(res, 500, false, `Server error updating badge definition: ${(error as Error).message}`, null, error);
