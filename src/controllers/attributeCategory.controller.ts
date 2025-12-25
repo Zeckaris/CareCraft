@@ -6,7 +6,7 @@ import { FlaggedIssue } from '../models/flaggedIssue.model.ts';
 import { sendResponse } from '../utils/sendResponse.util.ts';
 
 export const getAllAttributeCategories = async (req: Request, res: Response): Promise<void> => {
-  const { page = 1, limit = 10, name } = req.query;
+  const { page = 1, limit = 10, name, all=false } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
 
   const filter: any = {};
@@ -15,6 +15,15 @@ export const getAllAttributeCategories = async (req: Request, res: Response): Pr
   }
 
   try {
+
+    if (all === 'true' || all === '1') {
+      let categories = await AttributeCategory.find(filter)
+        .sort({ order: 1 }) 
+        .lean();
+      sendResponse(res, 200, true, 'All attribute categories fetched', categories);
+      return
+    }
+
     const categories = await AttributeCategory.find(filter)
       .sort({ createdAt: -1 })
       .skip(skip)

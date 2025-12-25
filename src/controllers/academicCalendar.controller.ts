@@ -40,7 +40,6 @@ export const createCalendar = async (req: Request, res: Response) => {
       return sendResponse(res, 400, false, "Missing required fields");
     const exists = await AcademicCalendar.findOne({ academicYear });
     if (exists) return sendResponse(res, 400, false, "Academic year already exists");
-            console.log(".............")
 
     const calendar = await AcademicCalendar.create({ academicYear, startDate, endDate });
     sendResponse(res, 201, true, "Academic calendar created", calendar);
