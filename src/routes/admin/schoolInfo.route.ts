@@ -3,6 +3,7 @@ import {
   createSchoolInfo,
   getSchoolInfo,
   updateSchoolInfo,
+  updateBranding,        
   deleteSchoolInfo,
 } from "../../controllers/admin/schoolInfo.controller.ts";
 import { createUpload } from "../../middlewares/uploads.middleware.ts";
@@ -11,9 +12,11 @@ const router = express.Router();
 
 const uploadSchoolLogo = createUpload('images/school');
 
-router.post("/school", uploadSchoolLogo.single('logo'), createSchoolInfo);
-router.get("/school", getSchoolInfo);
-router.put("/school", uploadSchoolLogo.single('logo'), updateSchoolInfo);
-router.delete("/school", deleteSchoolInfo);
+router.post("/school-info", uploadSchoolLogo.single('logo'), createSchoolInfo);
+router.get("/school-info", getSchoolInfo);
+router.put("/school-info", uploadSchoolLogo.single('logo'), updateSchoolInfo);
+router.delete("/school-info", deleteSchoolInfo);
+
+router.patch("/school-info/branding", updateBranding);
 
 export default router;
