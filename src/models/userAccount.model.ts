@@ -13,9 +13,33 @@ const userAccountSchema = new Schema<IUserAccount>({
   },
   phoneNumber: { type: String },
   lastLogin: { type: Date },
+
+  mfaEnabled: {
+    type: Boolean,
+    default: false
+  },
+
+  // === Account Suspension Feature ===
+  isSuspended: {
+    type: Boolean,
+    default: false
+  },
+  suspendedAt: {
+    type: Date
+  },
+  suspendedBy: {
+    type: Schema.Types.ObjectId,
+    ref: 'UserAccount'
+  },
+  suspensionReason: {
+    type: String
+  }
 },
 {
     timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" },
   })
+
+// Index only for suspension queries 
+userAccountSchema.index({ isSuspended: 1 });
 
 export default model<IUserAccount>('UserAccount', userAccountSchema)

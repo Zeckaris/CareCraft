@@ -9,5 +9,15 @@ export interface IUserAccount extends Document {
   role: 'student' | 'teacher' | 'parent' | 'admin' | 'coordinator'
   phoneNumber?: string
   createdAt: Date
+  updatedAt: Date
   lastLogin?: Date
+
+  // === MFA Feature ===
+  mfaEnabled: boolean
+
+  // === Account Suspension Feature ===
+isSuspended: boolean
+  suspendedAt?: Date | null
+  suspendedBy?: string | null
+  suspensionReason?: string | null
 }
