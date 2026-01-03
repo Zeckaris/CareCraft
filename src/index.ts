@@ -32,6 +32,7 @@ import dashboardRouter from './routes/frontendServicingRoutes/dashboard.route.ts
 import academicCalendarRouter from './routes/academicCalendar.route.ts'
 import academicTermRouter from './routes/academicTerm.route.ts'
 import conductedAssessmentRouter from './routes/conductedAssessment.route.ts'
+import adminSecurityRouter from './routes/admin/adminSecurity.route.ts'
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -81,6 +82,7 @@ app.use('/api/dashboard', dashboardRouter);
 app.use('/api/calendar', academicCalendarRouter);
 app.use('/api/term', academicTermRouter);
 app.use('/api/assessment/conducted', conductedAssessmentRouter);
+app.use('/api/security', adminSecurityRouter);
 
 
 connectDB().then(() => {

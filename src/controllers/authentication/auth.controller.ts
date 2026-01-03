@@ -5,7 +5,16 @@ import { InviteToken } from '../../models/inviteToken.model.ts';
 import bcrypt from 'bcrypt'
 import { generateToken, prepareUserData } from '../../utils/auth.util.ts';
 import mongoose from 'mongoose';
-import { validateEmail, sendInviteEmail, validateVerificationCode, verificationCodes, transporter } from '../../utils/emailVerification.util'
+import { 
+  validateEmail, 
+  sendInviteEmail, 
+  validateVerificationCode, 
+  verificationCodes, 
+  transporter,
+  mfaLoginCodes,
+  sendMfaLoginCode,
+  validateMfaLoginCode 
+} from '../../utils/emailVerification.util'
 import crypto from 'crypto';
 import { sendResponse } from '../../utils/sendResponse.util.ts';
 
@@ -21,6 +30,11 @@ interface SignupRequestBody {
   verificationCode: string;
 }
 
+interface LoginRequestBody {
+  email: string;
+  password: string;
+  mfaCode?: string; // Optional — only sent on second attempt when MFA required
+}
 
 
 export const sendVerification = async (req: Request, res: Response) => {
@@ -131,7 +145,7 @@ export const signupUser = async (req: Request, res: Response): Promise<void> => 
     const token = generateToken(newUser);
     res.cookie('jwt', token, { 
       httpOnly: true,
-          secure: process.env.NODE_ENV === 'development',
+          secure: process.env.NODE_ENV === 'production',
           sameSite: 'strict',
           maxAge: 7 * 24 * 60 * 60 * 1000, 
           path: '/'
@@ -149,51 +163,87 @@ export const signupUser = async (req: Request, res: Response): Promise<void> => 
 
 
 
-export const loginUser= async(req: Request, res: Response): Promise<void> =>{
-    const {email, password} = req.body
-    if (!email || !password){
+export const loginUser = async(req: Request, res: Response): Promise<void> =>{
+    const { email, password, mfaCode } = req.body as LoginRequestBody;
+
+    if (!email || !password) {
         sendResponse(res, 400, false, 'Missing fields');
-        return
+        return;
     }
 
-    try{
-        const user= await UserAccount.findOne({email})
-        if(!user){
+    try {
+        const user = await UserAccount.findOne({ email });
+        if (!user) {
             sendResponse(res, 401, false, 'Invalid email or password');
-            return
-        }
-        const isPasswordValid= await bcrypt.compare(password, user.password)
-        if (!isPasswordValid){
-            sendResponse(res, 401, false, 'Invalid email or password');
-            return
+            return;
         }
 
-        const token= generateToken(user)
-        const lastLogin= new Date()
-        user.lastLogin= lastLogin
-        await user.save()
-        const response= prepareUserData(user)
+        // === Account Suspension Check ===
+        if (user.isSuspended) {
+            sendResponse(res, 403, false, 'Account is suspended. Please contact the administrator.');
+            return;
+        }
+
+        // === Password Validation ===
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (!isPasswordValid) {
+            sendResponse(res, 401, false, 'Invalid email or password');
+            return;
+        }
+
+        // === MFA Handling ===
+        if (user.mfaEnabled) {
+            // If MFA code is provided → validate it
+            if (mfaCode) {
+                const mfaValidation = validateMfaLoginCode(email, mfaCode);
+                if (!mfaValidation.success) {
+                    sendResponse(res, 401, false, mfaValidation.message);
+                    return;
+                }
+                // Valid MFA code → proceed to login
+            } else {
+                // No MFA code provided → send one and ask for it
+                const codeSent = await sendMfaLoginCode(email);
+                if (!codeSent) {
+                    sendResponse(res, 500, false, 'Failed to send MFA code. Please try again.');
+                    return;
+                }
+                sendResponse(res, 200, true, 'MFA code sent to your email. Please enter it to continue.', null, { mfaRequired: true });
+                return;
+            }
+        }
+
+        // === Successful Login (no MFA or MFA validated) ===
+        const token = generateToken(user);
+        const lastLogin = new Date();
+        user.lastLogin = lastLogin;
+        await user.save();
+
+        const responseUser = prepareUserData(user);
         res.cookie('jwt', token, {
           httpOnly: true,
-          secure: process.env.NODE_ENV === 'development',
+          secure: process.env.NODE_ENV === 'production',
           sameSite: 'strict',
-          maxAge: 7 * 24 * 60 * 60 * 1000, 
+          maxAge: 7 * 24 * 60 * 60 * 1000,
           path: '/'
         });
-        sendResponse(res, 200, true, 'Login successful', { user: response });
-    }catch (error){
+
+        sendResponse(res, 200, true, 'Login successful', { user: responseUser });
+    } catch (error) {
+        console.error('Login error:', error);
         sendResponse(res, 500, false, 'Internal server error');
-        return
+        return;
     }
 }
 
-export const getCurrentUser= async (req:Request, res: Response):Promise<void> =>{
-    const userId= (req as any).user?._id
+export const getCurrentUser = async (req: Request, res: Response): Promise<void> => {
+    const userId = (req as any).user?.id
     if (!userId) {
        sendResponse(res, 401, false, 'Unauthorized.');
+       return;
     }
 
-    try{
+    try {
         const user = await UserAccount.findById(userId).select('-password')
         if (!user) {
         sendResponse(res, 404, false, 'User not found.');
@@ -201,19 +251,17 @@ export const getCurrentUser= async (req:Request, res: Response):Promise<void> =>
         }
 
         sendResponse(res, 200, true, 'User fetched successfully.', user);
-    }catch(error){
+    } catch(error) {
         sendResponse(res, 500, false, 'Server error fetching user.', null, error);
         return;
     }
-    
 }
 
 export const signout = async (req: Request, res: Response): Promise<void> => {
   try {
-
     res.clearCookie('jwt', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'development', 
+      secure: process.env.NODE_ENV === 'production', 
       sameSite: 'strict',
       path: '/',
     });
@@ -223,4 +271,3 @@ export const signout = async (req: Request, res: Response): Promise<void> => {
     sendResponse(res, 500, false, 'Logout failed', null, error);
   }
 };
-
