@@ -1,7 +1,11 @@
 import nodemailer from 'nodemailer';
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 
 export const verificationCodes: Map<string, { code: string; expiresAt: Date }> = new Map();
+
+// New map for login MFA codes (separate from signup verification)
+export const mfaLoginCodes: Map<string, { code: string; expiresAt: Date }> = new Map();
 
 export const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
@@ -31,6 +35,52 @@ export const validateVerificationCode = (email: string, providedCode: string): {
   return { success: true, message: 'Email verified!' };
 };
 
+// New: Validate MFA login code
+export const validateMfaLoginCode = (email: string, providedCode: string): { success: boolean; message: string } => {
+  const stored = mfaLoginCodes.get(email);
+  
+  if (!stored) return { success: false, message: 'No MFA code found. Please request login again.' };
+  
+  if (new Date() > stored.expiresAt) {
+    mfaLoginCodes.delete(email);
+    return { success: false, message: 'MFA code expired. Please try logging in again.' };
+  }
+  
+  if (stored.code !== providedCode) {
+    return { success: false, message: 'Invalid MFA code.' };
+  }
+
+  mfaLoginCodes.delete(email);
+  return { success: true, message: 'MFA verified successfully!' };
+};
+
+// New: Send MFA login code
+export const sendMfaLoginCode = async (email: string): Promise<boolean> => {
+  const code = crypto.randomBytes(3).toString('hex').toUpperCase();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+  mfaLoginCodes.set(email, { code, expiresAt });
+
+  try {
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'CareCraft Login Verification Code',
+      html: `
+        <h2>Login Verification Required</h2>
+        <p>Your login verification code is: <strong style="font-size: 24px;">${code}</strong></p>
+        <p><strong>Expires in 10 minutes</strong></p>
+        <p>Use this code to complete your login.</p>
+        <p>If you didn't attempt to log in, please ignore this email and consider enabling MFA in settings.</p>
+      `,
+    });
+    return true;
+  } catch (error) {
+    console.error('MFA login code email error:', error);
+    mfaLoginCodes.delete(email);
+    return false;
+  }
+};
 
 export const cleanupExpiredCodes = () => {
   const now = new Date();
@@ -41,10 +91,24 @@ export const cleanupExpiredCodes = () => {
   }
 };
 
+// Also clean up expired MFA codes
+export const cleanupExpiredMfaCodes = () => {
+  const now = new Date();
+  for (const [email] of mfaLoginCodes.entries()) {
+    if (now > mfaLoginCodes.get(email)!.expiresAt) {
+      mfaLoginCodes.delete(email);
+    }
+  }
+};
+
 export const startVerificationCleanup = () => {
   console.log('verification cleanup done')
-  setInterval(cleanupExpiredCodes, 180 * 1000);
+  setInterval(() => {
+    cleanupExpiredCodes();
+    cleanupExpiredMfaCodes(); // Clean both maps
+  }, 180 * 1000);
   cleanupExpiredCodes(); 
+  cleanupExpiredMfaCodes();
 };
 
 export const sendInviteEmail = async (to: string, token: string, role: string): Promise<void> => {
