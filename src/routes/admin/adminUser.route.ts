@@ -2,6 +2,7 @@ import express from 'express';
 import { getAllTeachers, getAllParents, getAllCoordinators,updateUser,deleteUser  } from '../../controllers/admin/adminUser.controller.ts';
 import { authMiddleware } from '../../middlewares/auth.middleware.ts';
 import { roleMiddleware } from '../../middlewares/role.middleware.ts';
+import {searchUsers} from '../../controllers/admin/userSearch.controller.ts'
 
 const router = express.Router();
 
@@ -35,5 +36,7 @@ router.delete('/users/:id',
   roleMiddleware('admin'),  
   deleteUser
 );
+
+router.get('/search', authMiddleware, roleMiddleware('admin'), searchUsers);
 
 export default router;
