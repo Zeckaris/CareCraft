@@ -7,7 +7,7 @@ const broadcastMessageSchema = new Schema<IBroadcastMessage>(
     body: { type: String, required: true }, // rich text / markdown
     recipients: [{ 
       type: String, 
-      enum: ['Admin', 'Coordinator', 'Teacher', 'Parent', 'All'], 
+      enum: ['student', 'teacher', 'parent', 'admin', 'coordinator', 'all'],
       required: true 
     }],
     sentBy: { type: Schema.Types.ObjectId, ref: 'UserAccount', required: true },
