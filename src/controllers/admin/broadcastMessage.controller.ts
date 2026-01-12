@@ -3,6 +3,7 @@ import { BroadcastMessage } from "../../models/broadcastMessage.model.ts"
 import { sendResponse } from "../../utils/sendResponse.util.ts"
 import { Types } from "mongoose"
 import { AuthRequest } from "../../middlewares/auth.middleware.ts"
+import { queues } from  "../../redis/queueManager.ts" 
 
 
 // --- Utility function to validate recipient roles ---
@@ -85,8 +86,6 @@ export const getBroadcastById = async (req: AuthRequest, res: Response): Promise
 };
 
 
-
-
 // -------------------- Create Broadcast --------------------
 export const createBroadcast = async (req: AuthRequest, res: Response): Promise<void> => {
     const { title, body, recipients, status } = req.body
@@ -106,11 +105,20 @@ export const createBroadcast = async (req: AuthRequest, res: Response): Promise<
             title: title.trim(),
             body: body.trim(),
             recipients,
-            status: status === 'sent' ? 'sent' : 'draft', // default to draft
-            sentBy: req.user?.id // <-- use user from AuthRequest
+            status: status === 'sent' ? 'sent' : 'draft',
+            sentBy: req.user?.id
         })
 
         await newBroadcast.save()
+
+        // --- Enqueue job if broadcast is sent ---
+        if (newBroadcast.status === 'sent') {
+            const job = await queues.broadcast.add('process-broadcast', {
+                broadcastId: newBroadcast._id.toString(),
+            })
+            console.log(`📢 Broadcast job added to queue: ${job.id}`)
+        }
+
         sendResponse(res, 201, true, "Broadcast created successfully", newBroadcast)
     } catch (error) {
         console.error("Create broadcast error:", error)
@@ -121,7 +129,7 @@ export const createBroadcast = async (req: AuthRequest, res: Response): Promise<
 // -------------------- Update Broadcast --------------------
 export const updateBroadcast = async (req: AuthRequest, res: Response): Promise<void> => {
     const { id } = req.params
-    const { title, body, recipients } = req.body
+    const { title, body, recipients, status } = req.body // include status update
 
     if (!id || !Types.ObjectId.isValid(id)) {
         sendResponse(res, 400, false, "Invalid broadcast ID")
@@ -148,14 +156,25 @@ export const updateBroadcast = async (req: AuthRequest, res: Response): Promise<
         if (title) broadcast.title = title.trim()
         if (body) broadcast.body = body.trim()
         if (recipients) broadcast.recipients = recipients
+        if (status) broadcast.status = status === 'sent' ? 'sent' : 'draft'
 
         await broadcast.save()
+
+        // --- Enqueue job if status changed to sent ---
+        if (broadcast.status === 'sent') {
+            const job = await queues.broadcast.add('process-broadcast', {
+                broadcastId: broadcast._id.toString(),
+            })
+            console.log(`📢 Broadcast job added to queue: ${job.id}`)
+        }
+
         sendResponse(res, 200, true, "Broadcast updated successfully", broadcast)
     } catch (error) {
         console.error("Update broadcast error:", error)
         sendResponse(res, 500, false, "Internal server error", null, error)
     }
 }
+
 
 // -------------------- Delete Broadcast --------------------
 export const deleteBroadcast = async (req: AuthRequest, res: Response): Promise<void> => {
