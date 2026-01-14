@@ -15,30 +15,24 @@ export interface AuthRequest extends Request {
 export const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.cookies?.jwt;
-    if (!token) {
-      return res.status(401).json({ message: 'No token provided. Unauthorized.' });
-    }
-    const decoded = verifyToken(token)
+    if (!token) return res.status(401).json({ message: 'No token provided. Unauthorized.' });
 
-    // Fetch user to check suspension status
+    const decoded = verifyToken(token);
+
     const user = await UserAccount.findById(decoded.id);
-    if (!user) {
-      return res.status(401).json({ message: 'User not found. Unauthorized.' });
-    }
+    if (!user) return res.status(401).json({ message: 'User not found. Unauthorized.' });
+    if (user.isSuspended) return res.status(403).json({ message: 'Account is suspended.' });
 
-    if (user.isSuspended) {
-      return res.status(403).json({ message: 'Account is suspended. Contact administrator.' });
-    }
 
     req.user = {
-      id: decoded.id,
-      email: decoded.email,
-      role: decoded.role,
-      firstName: decoded.firstName,
+      id: user._id,
+      email: user.email,
+      role: user.role,
+      firstName: user.firstName,
     };
 
-    next()
+    next();
   } catch (error) {
-    return res.status(401).json({ message: 'Invalid or expired token. Unauthorized.' })
+    return res.status(401).json({ message: 'Invalid or expired token. Unauthorized.' });
   }
-}
+};
