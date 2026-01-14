@@ -13,19 +13,19 @@ export interface IBroadcastJobData {
  */
 export const processBroadcastJob = async (broadcastId: string): Promise<void> => {
   if (!Types.ObjectId.isValid(broadcastId)) {
-    console.error('❌ Invalid broadcastId:', broadcastId);
+    console.error('Invalid broadcastId:', broadcastId);
     return;
   }
 
   const broadcast = await BroadcastMessage.findById(broadcastId);
   if (!broadcast) {
-    console.error('❌ Broadcast not found for id:', broadcastId);
+    console.error('Broadcast not found for id:', broadcastId);
     return;
   }
 
   // Only process if broadcast is sent
   if (broadcast.status !== 'sent') {
-    console.log('ℹ️ Broadcast is not marked as sent. Skipping.');
+    console.log('Broadcast is not marked as sent. Skipping.');
     return;
   }
 
@@ -40,7 +40,7 @@ export const processBroadcastJob = async (broadcastId: string): Promise<void> =>
   const users = await UserAccount.find(usersQuery);
 
   if (users.length === 0) {
-    console.log('ℹ️ No users matched broadcast recipients. Skipping.');
+    console.log('ℹ No users matched broadcast recipients. Skipping.');
     return;
   }
 
@@ -56,9 +56,9 @@ export const processBroadcastJob = async (broadcastId: string): Promise<void> =>
 
   try {
     await Notification.insertMany(notifications);
-    console.log(`✅ Notifications created for broadcast: ${broadcastId}`);
+    console.log(`Notifications created for broadcast: ${broadcastId}`);
   } catch (err) {
-    console.error('⚠️ Error creating some notifications, skipping:', err);
+    console.error('Error creating some notifications, skipping:', err);
   }
 
   // Update sentAt timestamp if not already set
