@@ -13,7 +13,6 @@ const validateRecipientRoles = (roles: string[]): boolean => {
 }
 
 
-
 // GET /broadcasts
 export const getAllBroadcasts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -62,6 +61,63 @@ export const getAllBroadcasts = async (req: AuthRequest, res: Response): Promise
     sendResponse(res, 500, false, "Internal server error", null, error);
   }
 };
+
+
+// GET /broadcasts/drafts
+export const getDraftBroadcasts = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { title, recipients, page = '1', limit = '20', all } = req.query as {
+      title?: string;
+      recipients?: string; // comma-separated roles
+      page?: string;
+      limit?: string;
+      all?: string;
+    };
+
+    const filter: any = { status: 'draft' }; // Only drafts
+
+    if (title) {
+      filter.title = { $regex: title.trim(), $options: 'i' };
+    }
+
+    if (recipients) {
+      const recipientArray = recipients.split(',').map(r => r.trim()).filter(r => r);
+      if (recipientArray.length > 0) {
+        filter.recipients = { $in: recipientArray };
+      }
+    }
+
+    let drafts;
+    let total = 0;
+
+    if (all === 'true') {
+      drafts = await BroadcastMessage.find(filter).sort({ createdAt: -1 });
+      total = drafts.length;
+      sendResponse(res, 200, true, "Draft broadcasts fetched successfully", drafts, null, {
+        total,
+        page: 1,
+        limit: total
+      });
+    } else {
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+      drafts = await BroadcastMessage.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit));
+      total = await BroadcastMessage.countDocuments(filter);
+
+      sendResponse(res, 200, true, "Draft broadcasts fetched successfully", drafts, null, {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit)
+      });
+    }
+  } catch (error) {
+    console.error("Get draft broadcasts error:", error);
+    sendResponse(res, 500, false, "Internal server error", null, error);
+  }
+};
+
 
 // GET /broadcasts/:id
 export const getBroadcastById = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -116,7 +172,7 @@ export const createBroadcast = async (req: AuthRequest, res: Response): Promise<
             const job = await queues.broadcast.add('process-broadcast', {
                 broadcastId: newBroadcast._id.toString(),
             })
-            console.log(`📢 Broadcast job added to queue: ${job.id}`)
+            console.log(`Broadcast job added to queue: ${job.id}`)
         }
 
         sendResponse(res, 201, true, "Broadcast created successfully", newBroadcast)
