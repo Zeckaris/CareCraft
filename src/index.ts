@@ -34,6 +34,7 @@ import academicTermRouter from './routes/academicTerm.route.ts'
 import conductedAssessmentRouter from './routes/conductedAssessment.route.ts'
 import adminSecurityRouter from './routes/admin/adminSecurity.route.ts'
 import broadcastMessageRouter from './routes/admin/broadcastMessage.route.ts'
+import notificationRouter from './routes/notification.route.ts'
 
 import './workers/broadcast.worker';
 
@@ -87,6 +88,7 @@ app.use('/api/term', academicTermRouter);
 app.use('/api/assessment/conducted', conductedAssessmentRouter);
 app.use('/api/security', adminSecurityRouter);
 app.use('/api/broadcast',broadcastMessageRouter);
+app.use('/api/notifications', notificationRouter);
 
 
 connectDB().then(() => {
