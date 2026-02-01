@@ -1,56 +1,53 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
-import { connectDB } from './config/database.ts';
+import { connectDB } from './config/database.js';
 import cookieParser from 'cookie-parser';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
 //Api router files
-import authRouter from './routes/auth.route.ts';
-import schoolInfoRouter from './routes/admin/schoolInfo.route.ts';
-import inviteTokenRouter from './routes/admin/inviteToken.route.ts';
-import studentRouter from './routes/student.route.ts';
-import { startVerificationCleanup } from './utils/emailVerification.util.ts';
-import gradeRouter from './routes/grade.route.ts';
-import subjectRouter from './routes/admin/subject.route.ts';
-import assessmentTypeRoutes from './routes/assessment/assessmentType.route.ts';
-import assessmentSetupRoutes from './routes/assessment/assessmentSetup.route.ts';
-import assessmentScoreRoutes from './routes/assessment/assessmentScore.routes.ts'
-import gradeSubjectAssessmentRoutes from './routes/admin/gradeSubjectAssessment.route.ts';
-import studentEnrollmentRouter from './routes/studentEnrollment.route.ts'
-import observationRouter from './routes/observation.route.ts';
-import attributeRouter from './routes/attributeCategory.route.ts';
-import badgeDefinitionRouter from './routes/badgeDefinition.route.ts';
-import badgeCriteriaRouter from './routes/badgeCriteria.route.ts';
-import studentBadgeRouter from './routes/studentBadge.route.ts';
-import actionPlanRouter   from './routes/actionPlan.route.ts';
-import attributeEvaluationRouter from './routes/attributeEvaluation.route.ts';
-import sharedPlanTemplateRouter from './routes/sharedPlanTemplate.route.ts';
-import adminUserRouter from './routes/admin/adminUser.route.ts';
-import dashboardRouter from './routes/frontendServicingRoutes/dashboard.route.ts'
-import academicCalendarRouter from './routes/academicCalendar.route.ts'
-import academicTermRouter from './routes/academicTerm.route.ts'
-import conductedAssessmentRouter from './routes/conductedAssessment.route.ts'
-import adminSecurityRouter from './routes/admin/adminSecurity.route.ts'
-import broadcastMessageRouter from './routes/admin/broadcastMessage.route.ts'
-import notificationRouter from './routes/notification.route.ts'
+import authRouter from './routes/auth.route.js';
+import schoolInfoRouter from './routes/admin/schoolInfo.route.js';
+import inviteTokenRouter from './routes/admin/inviteToken.route.js';
+import studentRouter from './routes/student.route.js';
+import { startVerificationCleanup } from './utils/emailVerification.util.js';
+import gradeRouter from './routes/grade.route.js';
+import subjectRouter from './routes/admin/subject.route.js';
+import assessmentTypeRoutes from './routes/assessment/assessmentType.route.js';
+import assessmentSetupRoutes from './routes/assessment/assessmentSetup.route.js';
+import assessmentScoreRoutes from './routes/assessment/assessmentScore.routes.js';
+import gradeSubjectAssessmentRoutes from './routes/admin/gradeSubjectAssessment.route.js';
+import studentEnrollmentRouter from './routes/studentEnrollment.route.js';
+import observationRouter from './routes/observation.route.js';
+import attributeRouter from './routes/attributeCategory.route.js';
+import badgeDefinitionRouter from './routes/badgeDefinition.route.js';
+import badgeCriteriaRouter from './routes/badgeCriteria.route.js';
+import studentBadgeRouter from './routes/studentBadge.route.js';
+import actionPlanRouter   from './routes/actionPlan.route.js';
+import attributeEvaluationRouter from './routes/attributeEvaluation.route.js';
+import sharedPlanTemplateRouter from './routes/sharedPlanTemplate.route.js';
+import adminUserRouter from './routes/admin/adminUser.route.js';
+import dashboardRouter from './routes/frontendServicingRoutes/dashboard.route.js';
+import academicCalendarRouter from './routes/academicCalendar.route.js';
+import academicTermRouter from './routes/academicTerm.route.js';
+import conductedAssessmentRouter from './routes/conductedAssessment.route.js';
+import adminSecurityRouter from './routes/admin/adminSecurity.route.js';
+import broadcastMessageRouter from './routes/admin/broadcastMessage.route.js';
+import notificationRouter from './routes/notification.route.js';
 
-import './workers/broadcast.worker';
+import './workers/broadcast.worker.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const rootDir = path.resolve(__dirname, '..');
+// ===== Fix for ESM =====
+const rootDir = path.join(import.meta.dirname, '..');
 
-
-const app= express()
+const app = express();
 
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json())
+app.use(express.json());
 app.use(
   cors({
     origin: 'http://localhost:5173', 
-    credentials: true,               // ALLOW COOKIES
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     exposedHeaders: ['set-cookie'],
@@ -59,9 +56,7 @@ app.use(
 app.use(cookieParser());
 app.use('/uploads', express.static(path.join(rootDir, 'uploads')));
 
-
-
-
+// ===== Routes =====
 app.use('/api/auth', authRouter);
 app.use("/api/general", schoolInfoRouter);
 app.use('/api/adminstrator', inviteTokenRouter);
@@ -87,13 +82,15 @@ app.use('/api/calendar', academicCalendarRouter);
 app.use('/api/term', academicTermRouter);
 app.use('/api/assessment/conducted', conductedAssessmentRouter);
 app.use('/api/security', adminSecurityRouter);
-app.use('/api/broadcast',broadcastMessageRouter);
+app.use('/api/broadcast', broadcastMessageRouter);
 app.use('/api/notifications', notificationRouter);
 
-
+// ===== DB + Server Start =====
 connectDB().then(() => {
-app.listen(process.env.PORT, () => console.log(`Server running on port ${process.env.PORT}`))
-})
+  app.listen(process.env.PORT, () => 
+    console.log(`Server running on port ${process.env.PORT}`)
+  );
+});
 
+// ===== Background Tasks =====
 startVerificationCleanup();
-
