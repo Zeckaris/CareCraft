@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { AcademicCalendar } from "../models/academicCalendar.model";
-import { sendResponse } from "../utils/sendResponse.util";
+import { AcademicCalendar } from '../models/academicCalendar.model.js';
+import { sendResponse } from '../utils/sendResponse.util.js';
 
 export const getAllCalendars = async (req: Request, res: Response) => {
   try {

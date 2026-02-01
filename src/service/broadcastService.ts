@@ -1,6 +1,6 @@
-import { BroadcastMessage } from '../models/broadcastMessage.model';
-import { Notification } from '../models/notification.model';
-import UserAccount from '../models/userAccount.model';
+import { BroadcastMessage } from '../models/broadcastMessage.model.js';
+import { Notification } from '../models/notification.model.js';
+import UserAccount from '../models/userAccount.model.js';
 import { Types } from 'mongoose';
 
 export interface IBroadcastJobData {

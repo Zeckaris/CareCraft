@@ -1,5 +1,5 @@
 import { Schema, model, Types } from 'mongoose';
-import { IBroadcastMessage, BroadcastPriority } from '../types/broadcastMessage.type.ts';
+import { IBroadcastMessage, BroadcastPriority } from '../types/broadcastMessage.type.js';
 
 const broadcastMessageSchema = new Schema<IBroadcastMessage>(
   {

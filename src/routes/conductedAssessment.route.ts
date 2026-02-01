@@ -6,9 +6,9 @@ import {
   createConducted,
   markStageConducted,
   updateStatus,
-} from '../controllers/conductedAssessment.controller';
-import { authMiddleware } from '../middlewares/auth.middleware';
-import { roleMiddleware } from '../middlewares/role.middleware';
+} from '../controllers/conductedAssessment.controller.js';
+import { authMiddleware } from '../middlewares/auth.middleware.js';
+import { roleMiddleware } from '../middlewares/role.middleware.js';
 
 
 const router = express.Router();

@@ -1,5 +1,5 @@
 import mongoose, { Schema, model } from 'mongoose';
-import { IConductedAssessment } from '../types/ConductedAssessment.type';
+import { IConductedAssessment } from '../types/ConductedAssessment.type.js';
 
 
 const conductedAssessmentSchema = new Schema<IConductedAssessment>(

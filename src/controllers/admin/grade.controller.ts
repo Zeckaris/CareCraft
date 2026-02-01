@@ -1,8 +1,8 @@
 import { Request, Response } from "express"
-import { Grade } from "../../models/grade.model.ts"
-import { sendResponse } from "../../utils/sendResponse.util.ts"
+import { Grade } from '../../models/grade.model.js'
+import { sendResponse } from '../../utils/sendResponse.util.js'
 import { Types } from "mongoose"
-import { StudentEnrollment } from "../../models/studentEnrollment.model.ts"
+import { StudentEnrollment } from '../../models/studentEnrollment.model.js'
 
 
 export const createGrade= async (req:Request, res:Response):Promise<void> =>{

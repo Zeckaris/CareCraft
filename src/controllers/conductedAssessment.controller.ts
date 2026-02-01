@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
-import { ConductedAssessment } from "../models/ConductedAssessment.model";
-import { sendResponse } from "../utils/sendResponse.util";
-import { AcademicTerm } from "../models/academicTerm.model";
+import { ConductedAssessment } from '../models/ConductedAssessment.model.js';
+import { sendResponse } from '../utils/sendResponse.util.js';
+import { AcademicTerm } from '../models/academicTerm.model.js';
 
 
 

@@ -1,5 +1,5 @@
 import { Schema, model, Types } from 'mongoose'
-import { IStudentBadge } from '../types/studentBadge.type.ts'
+import { IStudentBadge } from '../types/studentBadge.type.js'
 
 const studentBadgeSchema = new Schema<IStudentBadge>(
   {

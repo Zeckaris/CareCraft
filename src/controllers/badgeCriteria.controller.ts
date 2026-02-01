@@ -1,11 +1,11 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
-import { BadgeCriteria } from '../models/badgeCriteria.model.ts';
-import { BadgeDefinition } from '../models/badgeDefinition.model.ts';
-import { AttributeCategory } from '../models/attributeCategory.model.ts';
-import { ActionPlan } from '../models/actionPlan.model.ts';
-import { StudentBadge } from '../models/studentBadge.model.ts';
-import { sendResponse } from '../utils/sendResponse.util.ts'
+import { BadgeCriteria } from '../models/badgeCriteria.model.js';
+import { BadgeDefinition } from '../models/badgeDefinition.model.js';
+import { AttributeCategory } from '../models/attributeCategory.model.js';
+import { ActionPlan } from '../models/actionPlan.model.js';
+import { StudentBadge } from '../models/studentBadge.model.js';
+import { sendResponse } from '../utils/sendResponse.util.js'
 
 export const getAllBadgeCriteria = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, badgeDefinitionId, type, attributeCategoryId } = req.query;

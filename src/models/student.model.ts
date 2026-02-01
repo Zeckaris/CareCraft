@@ -1,5 +1,5 @@
 import { Schema, model, Types } from 'mongoose'
-import { IStudent } from '../types/student.type.ts'
+import { IStudent } from '../types/student.type.js'
 
 const studentSchema = new Schema<IStudent>(
   {

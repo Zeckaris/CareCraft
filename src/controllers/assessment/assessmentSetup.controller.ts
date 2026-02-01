@@ -1,9 +1,9 @@
 import { Request, Response } from "express"
-import { AssessmentSetup } from "../../models/assessment/assessmentSetup.model.ts"
-import { AssessmentType } from "../../models/assessment/assessmentType.model.ts"
-import { AssessmentScore } from "../../models/assessment/assessmentScore.model.ts"
-import { GradeSubjectAssessment } from "../../models/gradeSubjectAssessment.model.ts"
-import { sendResponse } from '../../utils/sendResponse.util.ts'
+import { AssessmentSetup } from '../../models/assessment/assessmentSetup.model.js'
+import { AssessmentType } from '../../models/assessment/assessmentType.model.js'
+import { AssessmentScore } from '../../models/assessment/assessmentScore.model.js'
+import { GradeSubjectAssessment } from '../../models/gradeSubjectAssessment.model.js'
+import { sendResponse } from '../../utils/sendResponse.util.js'
 
 export const createAssessmentSetup = async (req: Request, res: Response): Promise<void> => {
     const { name, description, assessmentTypeIds } = req.body

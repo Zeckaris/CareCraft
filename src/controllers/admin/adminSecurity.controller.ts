@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import UserAccount from '../../models/userAccount.model.ts';
-import { sendResponse } from '../../utils/sendResponse.util.ts';
+import UserAccount from '../../models/userAccount.model.js';
+import { sendResponse } from '../../utils/sendResponse.util.js';
 
 // Extend Request to include authenticated user from authMiddleware
 interface AuthRequest extends Request {

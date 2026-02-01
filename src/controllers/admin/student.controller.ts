@@ -1,10 +1,10 @@
 import { Request, Response } from 'express'
-import { Student } from '../../models/student.model.ts'
+import { Student } from '../../models/student.model.js'
 import mongoose, { Types } from 'mongoose'
-import { StudentEnrollment } from '../../models/studentEnrollment.model.ts'
-import { sendResponse } from '../../utils/sendResponse.util.ts' 
-import { logAudit } from '../../utils/auditLogger.util.ts'
-import { AuthRequest } from '../../middlewares/auth.middleware.ts'
+import { StudentEnrollment } from '../../models/studentEnrollment.model.js'
+import { sendResponse } from '../../utils/sendResponse.util.js' 
+import { logAudit } from '../../utils/auditLogger.util.js'
+import { AuthRequest } from '../../middlewares/auth.middleware.js'
 
 
 

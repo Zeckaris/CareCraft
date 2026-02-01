@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
-import { AttributeCategory } from '../models/attributeCategory.model.ts';
-import { Observation } from '../models/observation.model.ts';
-import { FlaggedIssue } from '../models/flaggedIssue.model.ts';
-import { sendResponse } from '../utils/sendResponse.util.ts';
+import { AttributeCategory } from '../models/attributeCategory.model.js';
+import { Observation } from '../models/observation.model.js';
+import { FlaggedIssue } from '../models/flaggedIssue.model.js';
+import { sendResponse } from '../utils/sendResponse.util.js';
 
 export const getAllAttributeCategories = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, name, all=false } = req.query;

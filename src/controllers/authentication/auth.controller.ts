@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
-import UserAccount from '../../models/userAccount.model.ts'
-import { Student } from '../../models/student.model.ts';
-import { InviteToken } from '../../models/inviteToken.model.ts';
+import UserAccount from '../../models/userAccount.model.js'
+import { Student } from '../../models/student.model.js';
+import { InviteToken } from '../../models/inviteToken.model.js';
 import bcrypt from 'bcrypt'
-import { generateToken, prepareUserData } from '../../utils/auth.util.ts';
+import { generateToken, prepareUserData } from '../../utils/auth.util.js';
 import mongoose from 'mongoose';
 import { 
   validateEmail, 
@@ -14,9 +14,9 @@ import {
   mfaLoginCodes,
   sendMfaLoginCode,
   validateMfaLoginCode 
-} from '../../utils/emailVerification.util'
+} from '../../utils/emailVerification.util.js'
 import crypto from 'crypto';
-import { sendResponse } from '../../utils/sendResponse.util.ts';
+import { sendResponse } from '../../utils/sendResponse.util.js';
 
 
 interface SignupRequestBody {

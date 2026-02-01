@@ -1,19 +1,14 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
-import { BadgeDefinition } from '../models/badgeDefinition.model.ts';
-import { BadgeCriteria } from '../models/badgeCriteria.model.ts';
-import { StudentBadge } from '../models/studentBadge.model.ts';
-import { AttributeCategory } from '../models/attributeCategory.model.ts';
-import { ActionPlan } from '../models/actionPlan.model.ts';
-import  UserAccount  from '../models/userAccount.model.ts';
-import { sendResponse } from '../utils/sendResponse.util.ts';
+import { BadgeDefinition } from '../models/badgeDefinition.model.js';
+import { BadgeCriteria } from '../models/badgeCriteria.model.js';
+import { StudentBadge } from '../models/studentBadge.model.js';
+import { AttributeCategory } from '../models/attributeCategory.model.js';
+import { ActionPlan } from '../models/actionPlan.model.js';
+import  UserAccount  from '../models/userAccount.model.js';
+import { sendResponse } from '../utils/sendResponse.util.js';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 
 interface AuthRequest extends Request {
   user?: {
@@ -23,7 +18,6 @@ interface AuthRequest extends Request {
   };
   file?: Express.Multer.File;
 }
-
 
 export const getAllBadgeDefinitions = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, name, level, attributeCategoryId } = req.query;
@@ -238,7 +232,7 @@ export const updateBadgeDefinition = async (req: AuthRequest, res: Response): Pr
     if (req.file) {
       // Delete old icon if exists
       if (badge.icon) {
-        const oldPath = path.join(__dirname, '..', '..', badge.icon);
+        const oldPath = path.join(import.meta.dirname, '..', '..', badge.icon);
         if (fs.existsSync(oldPath)) {
           fs.unlinkSync(oldPath);
         }

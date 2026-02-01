@@ -1,11 +1,11 @@
 import { Request, Response } from 'express';
 import { Types } from 'mongoose';
-import {SharedPlanTemplate} from '../models/sharedPlanTemplate.model.ts';
-import {ActionPlan} from '../models/actionPlan.model.ts';
-import {AttributeCategory} from '../models/attributeCategory.model.ts';
-import {Student} from '../models/student.model.ts';
-import UserAccount from '../models/userAccount.model.ts';
-import { sendResponse } from  '../utils/sendResponse.util.ts';
+import {SharedPlanTemplate} from '../models/sharedPlanTemplate.model.js';
+import {ActionPlan} from '../models/actionPlan.model.js';
+import {AttributeCategory} from '../models/attributeCategory.model.js';
+import {Student} from '../models/student.model.js';
+import UserAccount from '../models/userAccount.model.js';
+import { sendResponse } from '../utils/sendResponse.util.js';
 
 interface AuthRequest extends Request {
   user?: { id: string; email: string; role: string };

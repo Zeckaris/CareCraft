@@ -1,6 +1,6 @@
-import { createWorker } from './baseWorker';
-import { processBroadcastJob } from '../service/broadcastService';
-import { IBroadcastJobData } from '../types/broadcastJob.type';
+import { createWorker } from './baseWorker.js';
+import { processBroadcastJob } from '../service/broadcastService.js';
+import { IBroadcastJobData } from '../types/broadcastJob.type.js';
 
 
 

@@ -1,10 +1,10 @@
 import { Request, Response } from 'express'
-import { Student } from '../../models/student.model'
-import { StudentEnrollment } from '../../models/studentEnrollment.model'
-import { Grade } from '../../models/grade.model'
-import UserAccount from '../../models/userAccount.model'
-import { sendResponse } from '../../utils/sendResponse.util'
-import { AuditLog } from '../../models/auditLog.model';
+import { Student } from '../../models/student.model.js'
+import { StudentEnrollment } from '../../models/studentEnrollment.model.js'
+import { Grade } from '../../models/grade.model.js'
+import UserAccount from '../../models/userAccount.model.js'
+import { sendResponse } from '../../utils/sendResponse.util.js'
+import { AuditLog } from '../../models/auditLog.model.js';
 
 // Extract start year from "2024-25" → 2024
 const extractStartYear = (schoolYear: string): number => {

@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { authMiddleware } from '../middlewares/auth.middleware.ts';
-import { roleMiddleware } from '../middlewares/role.middleware.ts';
+import { authMiddleware } from '../middlewares/auth.middleware.js';
+import { roleMiddleware } from '../middlewares/role.middleware.js';
 import {
   getAllAttributeEvaluations,
   getAttributeEvaluationsByStudent,
@@ -10,7 +10,7 @@ import {
   updateAttributeEvaluation,
   patchAttributeEvaluation,
   deleteAttributeEvaluation
-} from '../controllers/attributeEvaluation.controller.ts';
+} from '../controllers/attributeEvaluation.controller.js';
 
 const router = Router();
 

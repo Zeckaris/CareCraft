@@ -1,5 +1,5 @@
 import { Schema, model, Types } from 'mongoose'
-import { IAttributeCategory } from '../types/attributeCategory.type.ts'
+import { IAttributeCategory } from '../types/attributeCategory.type.js'
 
 const attributeCategorySchema = new Schema<IAttributeCategory>(
   {

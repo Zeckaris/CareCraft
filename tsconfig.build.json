@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",   // ← keep this or remove it (it defaults to NodeNext anyway)
+    "declaration": false,
+    "sourceMap": true
+  },
+  "include": ["src/**/*"]
+}

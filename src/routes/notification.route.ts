@@ -7,8 +7,8 @@ import {
   getTotalCount,
   markAsRead,
   markAllUnreadAsRead,
-} from '../controllers/notification.controller.ts'
-import { authMiddleware } from '../middlewares/auth.middleware.ts'
+} from '../controllers/notification.controller.js'
+import { authMiddleware } from '../middlewares/auth.middleware.js'
 
 
 const router = express.Router();

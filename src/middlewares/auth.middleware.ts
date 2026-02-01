@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
-import { verifyToken } from '../utils/auth.util.ts'
+import { verifyToken } from '../utils/auth.util.js'
 import { Types } from 'mongoose';
-import UserAccount from "../models/userAccount.model.ts"
+import UserAccount from '../models/userAccount.model.js'
 
 export interface AuthRequest extends Request {
   user?: {

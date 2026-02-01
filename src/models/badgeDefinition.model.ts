@@ -1,5 +1,5 @@
 import { Schema, model, Types } from 'mongoose'
-import { IBadgeDefinition } from '../types/badgeDefinition.type.ts'
+import { IBadgeDefinition } from '../types/badgeDefinition.type.js'
 
 const badgeDefinitionSchema = new Schema<IBadgeDefinition>(
   {

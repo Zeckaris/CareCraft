@@ -6,10 +6,10 @@ import {
   updateStudent,
   deleteStudent,
   getStudentsByGrade
-} from '../controllers/admin/student.controller.ts'
-import { authMiddleware } from '../middlewares/auth.middleware.ts'
-import { roleMiddleware } from '../middlewares/role.middleware.ts'
-import { batchCreateStudents } from '../controllers/admin/student.batch.controller.ts'
+} from '../controllers/admin/student.controller.js'
+import { authMiddleware } from '../middlewares/auth.middleware.js'
+import { roleMiddleware } from '../middlewares/role.middleware.js'
+import { batchCreateStudents } from '../controllers/admin/student.batch.controller.js'
 
 const router = express.Router()
 

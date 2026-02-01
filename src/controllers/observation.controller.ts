@@ -1,11 +1,11 @@
 import { Request, Response } from 'express';
-import { Observation } from '../models/observation.model.ts';
-import { Student } from '../models/student.model.ts';
-import UserAccount from '../models/userAccount.model.ts'; 
+import { Observation } from '../models/observation.model.js';
+import { Student } from '../models/student.model.js';
+import UserAccount from '../models/userAccount.model.js'; 
 import mongoose from 'mongoose';
-import { StudentEnrollment } from '../models/studentEnrollment.model.ts';
-import { AttributeCategory } from '../models/attributeCategory.model.ts';
-import { sendResponse } from '../utils/sendResponse.util.ts';
+import { StudentEnrollment } from '../models/studentEnrollment.model.js';
+import { AttributeCategory } from '../models/attributeCategory.model.js';
+import { sendResponse } from '../utils/sendResponse.util.js';
 
 export const getAllObservations = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, studentId, teacherId, category } = req.query;

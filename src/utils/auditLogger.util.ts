@@ -1,4 +1,4 @@
-import { AuditLog } from '../models/auditLog.model'; 
+import { AuditLog } from '../models/auditLog.model.js'; 
 import { Request } from 'express';
 
 interface LogOptions {

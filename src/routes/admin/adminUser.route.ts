@@ -1,8 +1,8 @@
 import express from 'express';
-import { getAllTeachers, getAllParents, getAllCoordinators,updateUser,deleteUser  } from '../../controllers/admin/adminUser.controller.ts';
-import { authMiddleware } from '../../middlewares/auth.middleware.ts';
-import { roleMiddleware } from '../../middlewares/role.middleware.ts';
-import {searchUsers} from '../../controllers/admin/userSearch.controller.ts'
+import { getAllTeachers, getAllParents, getAllCoordinators,updateUser,deleteUser  } from '../../controllers/admin/adminUser.controller.js';
+import { authMiddleware } from '../../middlewares/auth.middleware.js';
+import { roleMiddleware } from '../../middlewares/role.middleware.js';
+import {searchUsers} from '../../controllers/admin/userSearch.controller.js'
 
 const router = express.Router();
 

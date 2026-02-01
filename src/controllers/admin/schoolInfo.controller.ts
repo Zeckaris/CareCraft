@@ -1,11 +1,8 @@
 import { Request, Response } from "express";
-import { SchoolInfo } from "../../models/schoolInfo.model.ts";
-import { sendResponse } from '../../utils/sendResponse.util.ts';
+import { SchoolInfo } from '../../models/schoolInfo.model.js';
+import { sendResponse } from '../../utils/sendResponse.util.js';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Branding validation constants (matching schema enums)
 const VALID_THEMES = [
@@ -65,7 +62,6 @@ export const createSchoolInfo = async (req: Request, res: Response): Promise<voi
 
     sendResponse(res, 201, true, "School info created successfully", schoolInfo);
   } catch (error: any) {
-    // Handle Mongoose validation errors more gracefully
     if (error.name === 'ValidationError') {
       const validationErrors = Object.values(error.errors).map((err: any) => err.message);
       sendResponse(res, 400, false, "Validation failed", null, { details: validationErrors });
@@ -100,9 +96,8 @@ export const updateSchoolInfo = async (req: Request, res: Response): Promise<voi
 
     // Handle logo update
     if (req.file) {
-      // Delete old logo if exists
       if (schoolInfo.logo) {
-        const oldPath = path.join(__dirname, '..', '..', schoolInfo.logo);
+        const oldPath = path.join(import.meta.dirname, '..', '..', schoolInfo.logo);
         if (fs.existsSync(oldPath)) {
           fs.unlinkSync(oldPath);
         }
@@ -110,7 +105,6 @@ export const updateSchoolInfo = async (req: Request, res: Response): Promise<voi
       req.body.logo = `/uploads/images/school/${req.file.filename}`;
     }
 
-    // Filter out undefined/null values to prevent overwriting with empty values
     const updateData: any = {};
     for (const [key, value] of Object.entries(req.body)) {
       if (value !== undefined && value !== null) {
@@ -129,7 +123,6 @@ export const updateSchoolInfo = async (req: Request, res: Response): Promise<voi
 
     sendResponse(res, 200, true, "School info updated successfully", updatedInfo);
   } catch (error: any) {
-    // Handle Mongoose validation errors more gracefully
     if (error.name === 'ValidationError') {
       const validationErrors = Object.values(error.errors).map((err: any) => err.message);
       sendResponse(res, 400, false, "Validation failed", null, { details: validationErrors });
@@ -148,7 +141,6 @@ export const updateBranding = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Validate branding-specific fields
     const validation = validateBrandingUpdate(req.body);
     if (!validation.isValid) {
       sendResponse(res, 400, false, "Invalid branding configuration", null, { 
@@ -157,12 +149,10 @@ export const updateBranding = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Filter out undefined/null values for partial update
     const updateData: Partial<BrandingUpdate> = {};
     if (req.body.theme !== undefined) updateData.theme = req.body.theme;
     if (req.body.fontFamily !== undefined) updateData.fontFamily = req.body.fontFamily;
 
-    // Use $set to only update specified fields
     const updatedInfo = await SchoolInfo.findByIdAndUpdate(
       schoolInfo._id,
       { $set: updateData },
@@ -179,7 +169,6 @@ export const updateBranding = async (req: Request, res: Response): Promise<void>
       fontFamily: updatedInfo.fontFamily,
     });
   } catch (error: any) {
-    // Additional safety net for validation errors
     if (error.name === 'ValidationError') {
       const validationErrors = Object.values(error.errors).map((err: any) => err.message);
       sendResponse(res, 400, false, "Validation failed", null, { details: validationErrors });
@@ -190,7 +179,6 @@ export const updateBranding = async (req: Request, res: Response): Promise<void>
   }
 };
 
-// Incase - keep for emergencies but probably won't expose in production
 export const deleteSchoolInfo = async (req: Request, res: Response): Promise<void> => {
   try {
     const schoolInfo = await SchoolInfo.findOne();
@@ -199,7 +187,6 @@ export const deleteSchoolInfo = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    // Don't delete logo file - let cleanup happen elsewhere if needed
     await SchoolInfo.findByIdAndDelete(schoolInfo._id);
     sendResponse(res, 200, true, "School info deleted successfully");
   } catch (error) {

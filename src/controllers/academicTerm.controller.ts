@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { AcademicTerm } from "../models/academicTerm.model";
-import { sendResponse } from "../utils/sendResponse.util";
+import { AcademicTerm } from '../models/academicTerm.model.js';
+import { sendResponse } from '../utils/sendResponse.util.js';
 
 
 

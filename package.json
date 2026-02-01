@@ -2,11 +2,13 @@
   "name": "care-craft-backend",
   "version": "1.0.0",
   "description": "backend created to provide api services for the carecraft frontend app",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "type": "module",
   "overrides": {
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.1/xlsx-0.20.1.tgz"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "test": "echo \"Error: no test specified\" && exit 1",
     "seed-types": "ts-node src/scripts/seedDemoTypes.ts",
     "seed-setups": "ts-node src/scripts/seedDemoSetups.ts",

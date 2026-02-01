@@ -1,8 +1,8 @@
 import { Response } from 'express';
-import { Notification } from '../models/notification.model.ts';
+import { Notification } from '../models/notification.model.js';
 import { Types } from 'mongoose';
-import { sendResponse } from '../utils/sendResponse.util.ts';
-import { AuthRequest } from '../middlewares/auth.middleware.ts';
+import { sendResponse } from '../utils/sendResponse.util.js';
+import { AuthRequest } from '../middlewares/auth.middleware.js';
 
 // GET /api/notifications/unread
 export const getUnreadNotifications = async (req: AuthRequest, res: Response): Promise<void> => {

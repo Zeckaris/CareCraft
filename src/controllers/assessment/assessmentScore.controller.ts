@@ -1,11 +1,12 @@
 import { Request, Response } from "express"
-import { AssessmentScore } from "../../models/assessment/assessmentScore.model.ts"
-import { GradeSubjectAssessment } from "../../models/gradeSubjectAssessment.model.ts"
-import { StudentEnrollment } from "../../models/studentEnrollment.model.ts"
-import { AssessmentSetup } from "../../models/assessment/assessmentSetup.model.ts"
-import { recalcResult,validateConducted } from "../../utils/assessment.utility.ts"
-import { AssessmentType } from "../../models/assessment/assessmentType.model.ts"
-import { sendResponse } from '../../utils/sendResponse.util.ts';
+import { AssessmentScore } from '../../models/assessment/assessmentScore.model.js'
+import { GradeSubjectAssessment } from '../../models/gradeSubjectAssessment.model.js'
+import { StudentEnrollment } from '../../models/studentEnrollment.model.js'
+import { AssessmentSetup } from '../../models/assessment/assessmentSetup.model.js'
+import { recalcResult,validateConducted } from '../../utils/assessment.utility.js'
+import { AssessmentType } from '../../models/assessment/assessmentType.model.js'
+import { sendResponse } from '../../utils/sendResponse.util.js';
+import { ConductedAssessment } from '../../models/ConductedAssessment.model.js'
 
 // BULK GENERATION (Grade + Subject → Auto Setup from GSA)
 export const generateBulkScores = async (req: Request, res: Response): Promise<void> => {
@@ -211,46 +212,90 @@ export const generateMultipleScores = async (req: Request, res: Response): Promi
 }
 
 // MARK STAGE CONDUCTED (GradeSubjectAssessment ONLY)
-export const markStageConducted = async (req: Request, res: Response): Promise<void> => {
-    const { id } = req.params  
-    const { assessmentTypeId } = req.body
+export const markStageConducted = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const { id } = req.params // GSA ID
+  const { assessmentTypeId, academicTermId } = req.body
 
-    try {
-        const gsa = await GradeSubjectAssessment.findById(id)
-        if (!gsa) {
-            sendResponse(res, 404, false, "Class assessment not found")
-            return
-        }
+  if (!assessmentTypeId || !academicTermId) {
+    sendResponse(res, 400, false, "Missing: assessmentTypeId, academicTermId")
+    return
+  }
 
-        const setup = await AssessmentSetup.findById(gsa.assessmentSetupId).populate('assessmentTypeIds')
-        if (!setup) {
-            sendResponse(res, 404, false, "Assessment setup not found")
-            return
-        }
-
-        const populatedTypes = setup.assessmentTypeIds as any[]
-        const typeIndex = populatedTypes.findIndex((t: any) => t._id.equals(assessmentTypeId))
-
-        // VALIDATE ORDER - No skipping!
-        if (typeIndex > gsa.conductedStages.length) {
-            const nextExpected = populatedTypes[gsa.conductedStages.length]
-            const currentAttempt = populatedTypes[typeIndex]
-            sendResponse(res, 400, false, `Complete "${nextExpected.name}" before "${currentAttempt.name}"`)
-            return
-        }
-
-        if (!gsa.conductedStages.includes(assessmentTypeId)) {
-            gsa.conductedStages.push(assessmentTypeId)
-            await gsa.save()
-        }
-
-        sendResponse(res, 200, true, "Stage marked conducted", {
-            totalStages: gsa.conductedStages.length,
-            nextStage: populatedTypes[gsa.conductedStages.length]?.name || "Complete!"
-        })
-    } catch (error) {
-        sendResponse(res, 500, false, "Internal server error", null, error)
+  try {
+    const gsa = await GradeSubjectAssessment.findById(id)
+    if (!gsa) {
+      sendResponse(res, 404, false, "Class assessment not found")
+      return
     }
+
+    const setup = await AssessmentSetup.findById(gsa.assessmentSetupId)
+      .populate('assessmentTypeIds')
+    if (!setup) {
+      sendResponse(res, 404, false, "Assessment setup not found")
+      return
+    }
+
+    // Find or create ConductedAssessment
+    let conducted = await ConductedAssessment.findOne({
+      gsaId: gsa._id,
+      academicTermId
+    })
+
+    if (!conducted) {
+      conducted = new ConductedAssessment({
+        gsaId: gsa._id,
+        academicTermId,
+        conductedStages: [],
+        status: 'planned'
+      })
+    }
+
+    const populatedTypes = setup.assessmentTypeIds as any[]
+    const typeIndex = populatedTypes.findIndex(
+      (t: any) => t._id.equals(assessmentTypeId)
+    )
+
+    if (typeIndex === -1) {
+      sendResponse(res, 400, false, "Invalid assessment type")
+      return
+    }
+
+    // VALIDATE ORDER — NO SKIPPING
+    if (typeIndex > conducted.conductedStages.length) {
+      const nextExpected = populatedTypes[conducted.conductedStages.length]
+      const currentAttempt = populatedTypes[typeIndex]
+      sendResponse(
+        res,
+        400,
+        false,
+        `Complete "${nextExpected.name}" before "${currentAttempt.name}"`
+      )
+      return
+    }
+
+    if (!conducted.conductedStages.some(id =>
+      id.equals(assessmentTypeId)
+    )) {
+      conducted.conductedStages.push(assessmentTypeId)
+      conducted.status =
+        conducted.conductedStages.length === populatedTypes.length
+          ? 'completed'
+          : 'in-progress'
+
+      await conducted.save()
+    }
+
+    sendResponse(res, 200, true, "Stage marked conducted", {
+      totalStages: conducted.conductedStages.length,
+      nextStage:
+        populatedTypes[conducted.conductedStages.length]?.name || "Complete!"
+    })
+  } catch (error) {
+    sendResponse(res, 500, false, "Internal server error", null, error)
+  }
 }
 
 // UPDATE SCORES + SMART RECALCULATION (FROM conductedStages)

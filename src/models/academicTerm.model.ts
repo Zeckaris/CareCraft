@@ -1,5 +1,5 @@
 import mongoose, { Schema, model } from 'mongoose';
-import { IAcademicTerm } from '../types/academicTerm.type';
+import { IAcademicTerm } from '../types/academicTerm.type.js';
 
 
 const academicTermSchema = new Schema<IAcademicTerm>(

@@ -1,9 +1,9 @@
 import { Request, Response } from "express"
-import { GradeSubjectAssessment } from "../../models/gradeSubjectAssessment.model.ts"
-import { AssessmentSetup } from "../../models/assessment/assessmentSetup.model.ts"
-import { Subject } from "../../models/subject.model.ts"
-import { Grade } from "../../models/grade.model.ts"
-import { sendResponse } from '../../utils/sendResponse.util.ts'
+import { GradeSubjectAssessment } from '../../models/gradeSubjectAssessment.model.js'
+import { AssessmentSetup } from '../../models/assessment/assessmentSetup.model.js'
+import { Subject } from '../../models/subject.model.js'
+import { Grade } from '../../models/grade.model.js'
+import { sendResponse } from '../../utils/sendResponse.util.js'
 
 
 

@@ -1,10 +1,10 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
-import { ActionPlan } from '../models/actionPlan.model.ts';
-import { Student } from '../models/student.model.ts';
-import  UserAccount  from '../models/userAccount.model.ts';
-import { BadgeCriteria } from '../models/badgeCriteria.model.ts';
-import { sendResponse } from '../utils/sendResponse.util.ts'
+import { ActionPlan } from '../models/actionPlan.model.js';
+import { Student } from '../models/student.model.js';
+import  UserAccount  from '../models/userAccount.model.js';
+import { BadgeCriteria } from '../models/badgeCriteria.model.js';
+import { sendResponse } from '../utils/sendResponse.util.js'
 
 
 const VALID_RESPONSIBLE_PARTIES = ['teacher', 'parent', 'either'] as const;

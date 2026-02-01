@@ -1,5 +1,5 @@
 import { Schema, model, Types } from 'mongoose'
-import { IInviteToken } from '../types/inviteToken.type.ts'
+import { IInviteToken } from '../types/inviteToken.type.js'
 
 const inviteTokenSchema = new Schema<IInviteToken>(
   {

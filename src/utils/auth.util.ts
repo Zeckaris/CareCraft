@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken'
-import { IUserAccount } from '../types/userAccount.type.ts'
+import { IUserAccount } from '../types/userAccount.type.js'
 import { profile } from 'console'
 import { Types } from 'mongoose'
 

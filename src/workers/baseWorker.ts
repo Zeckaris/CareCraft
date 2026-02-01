@@ -1,5 +1,5 @@
 import { Worker, Job } from 'bullmq';
-import { redisConnection } from '../redis/redis.connection';
+import { redisConnection } from '../redis/redis.connection.js';
 
 export const createWorker = <T>(
   queueName: string,

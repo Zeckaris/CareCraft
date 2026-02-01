@@ -1,5 +1,5 @@
 import {Schema, model} from 'mongoose'
-import { IAcademicCalendar } from '../types/academicCalendar.type'
+import { IAcademicCalendar } from '../types/academicCalendar.type.js'
 
 const AcademicCalendarSchema = new Schema<IAcademicCalendar>({
     academicYear : {type : String, required : true, unique: true,

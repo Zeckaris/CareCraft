@@ -1,9 +1,9 @@
 import { Response } from "express"
-import { BroadcastMessage } from "../../models/broadcastMessage.model.ts"
-import { sendResponse } from "../../utils/sendResponse.util.ts"
+import { BroadcastMessage } from '../../models/broadcastMessage.model.js'
+import { sendResponse } from '../../utils/sendResponse.util.js'
 import { Types } from "mongoose"
-import { AuthRequest } from "../../middlewares/auth.middleware.ts"
-import { queues } from  "../../redis/queueManager.ts" 
+import { AuthRequest } from '../../middlewares/auth.middleware.js'
+import { queues } from '../../redis/queueManager.js' 
 
 
 // --- Utility function to validate recipient roles ---

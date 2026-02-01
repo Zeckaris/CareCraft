@@ -1,10 +1,10 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
-import { StudentBadge } from '../models/studentBadge.model.ts';
-import { BadgeDefinition } from '../models/badgeDefinition.model.ts';
-import { Student } from '../models/student.model.ts';
-import UserAccount  from '../models/userAccount.model.ts';
-import { sendResponse } from '../utils/sendResponse.util.ts'
+import { StudentBadge } from '../models/studentBadge.model.js';
+import { BadgeDefinition } from '../models/badgeDefinition.model.js';
+import { Student } from '../models/student.model.js';
+import UserAccount  from '../models/userAccount.model.js';
+import { sendResponse } from '../utils/sendResponse.util.js';
 
 export const getAllStudentBadges = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, studentId, badgeId, teacherId, criteriaMet } = req.query;

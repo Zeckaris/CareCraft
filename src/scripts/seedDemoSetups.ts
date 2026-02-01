@@ -1,7 +1,7 @@
 import mongoose from 'mongoose'
-import { connectDB } from '../config/database.ts'
-import { AssessmentSetup } from '../models/assessment/assessmentSetup.model.ts'
-import { AssessmentType } from '../models/assessment/assessmentType.model.ts'
+import { connectDB } from '../config/database.js'
+import { AssessmentSetup } from '../models/assessment/assessmentSetup.model.js'
+import { AssessmentType } from '../models/assessment/assessmentType.model.js'
 
 const UNIVERSAL_SETUP = {
   name: 'Full Term Assessment',

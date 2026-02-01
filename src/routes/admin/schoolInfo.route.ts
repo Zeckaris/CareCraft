@@ -5,10 +5,10 @@ import {
   updateSchoolInfo,
   updateBranding,        
   deleteSchoolInfo,
-} from "../../controllers/admin/schoolInfo.controller.ts";
-import { createUpload } from "../../middlewares/uploads.middleware.ts";
-import { roleMiddleware } from "../../middlewares/role.middleware.ts";
-import { authMiddleware } from "../../middlewares/auth.middleware.ts";
+} from '../../controllers/admin/schoolInfo.controller.js';
+import { createUpload } from '../../middlewares/uploads.middleware.js';
+import { roleMiddleware } from '../../middlewares/role.middleware.js';
+import { authMiddleware } from '../../middlewares/auth.middleware.js';
 
 const router = express.Router();
 

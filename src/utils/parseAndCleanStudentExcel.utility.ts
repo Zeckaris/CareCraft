@@ -1,5 +1,5 @@
 import XLSX from 'xlsx';
-import { IStudent } from '../types/student.type.ts';
+import { IStudent } from '../types/student.type.js';
 import { Model } from 'mongoose';
 
 // Interface for the result of parsing

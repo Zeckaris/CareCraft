@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
-import UserAccount from '../../models/userAccount.model.ts';
-import { sendResponse } from '../../utils/sendResponse.util.ts';
-import { IUserAccount } from '../../types/userAccount.type.ts';
+import UserAccount from '../../models/userAccount.model.js';
+import { sendResponse } from '../../utils/sendResponse.util.js';
+import { IUserAccount } from '../../types/userAccount.type.js';
 
 interface AuthRequest extends Request {
   user?: { id: string; email: string; role: 'admin' | 'teacher' | 'parent' | 'student' | 'coordinator' };

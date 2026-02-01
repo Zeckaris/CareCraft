@@ -1,6 +1,6 @@
 import { Queue } from 'bullmq';
-import { redisConnection } from './redis.connection';
-import { IBroadcastJobData } from '../types/broadcastJob.type';
+import { redisConnection } from './redis.connection.js';
+import { IBroadcastJobData } from '../types/broadcastJob.type.js';
 
 /**
  * Central queue manager for all jobs.

@@ -1,2 +1,4 @@
 node_modules
 .env
+fixes_to_continue.txt
+dist

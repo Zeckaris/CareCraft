@@ -1,5 +1,5 @@
 import mongoose, { Schema } from "mongoose";
-import { ISchoolInfo } from "../types/schoolInfo.type.ts";
+import { ISchoolInfo } from '../types/schoolInfo.type.js';
 
 const SchoolInfoSchema = new Schema<ISchoolInfo>(
   {

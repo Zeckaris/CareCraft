@@ -7,9 +7,9 @@ import {
   updateCalendar,
   setCurrentCalendar,
   deleteCalendar,
-} from '../controllers/academicCalendar.controller'
-import { authMiddleware } from '../middlewares/auth.middleware';
-import { roleMiddleware } from '../middlewares/role.middleware';
+} from '../controllers/academicCalendar.controller.js'
+import { authMiddleware } from '../middlewares/auth.middleware.js';
+import { roleMiddleware } from '../middlewares/role.middleware.js';
 
 
 const router = express.Router();
