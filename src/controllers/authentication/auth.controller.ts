@@ -145,9 +145,9 @@ export const signupUser = async (req: Request, res: Response): Promise<void> => 
     const token = generateToken(newUser);
     res.cookie('jwt', token, { 
       httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
-          maxAge: 7 * 24 * 60 * 60 * 1000, 
+          secure: true,
+          sameSite: 'none',
+          maxAge: 2 * 24 * 60 * 60 * 1000, 
           path: '/'
     });
     newUser.lastLogin = new Date();
@@ -222,9 +222,9 @@ export const loginUser = async(req: Request, res: Response): Promise<void> =>{
         const responseUser = prepareUserData(user);
         res.cookie('jwt', token, {
           httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
-          maxAge: 7 * 24 * 60 * 60 * 1000,
+          secure: true,
+          sameSite: 'none',
+          maxAge: 2 * 24 * 60 * 60 * 1000,
           path: '/'
         });
 
@@ -261,8 +261,8 @@ export const signout = async (req: Request, res: Response): Promise<void> => {
   try {
     res.clearCookie('jwt', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', 
-      sameSite: 'strict',
+      secure: true, 
+      sameSite: 'none',
       path: '/',
     });
 
