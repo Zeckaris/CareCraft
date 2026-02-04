@@ -1,11 +1,17 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "noEmit": false,
+    "noEmit": false,                   // ← This overrides the base tsconfig — critical!
     "module": "NodeNext",
-    "moduleResolution": "NodeNext",   // ← keep this or remove it (it defaults to NodeNext anyway)
+    "moduleResolution": "NodeNext",
+    "outDir": "./dist",                // Explicitly set (good practice)
+    "rootDir": "./src",                // Explicitly set
     "declaration": false,
-    "sourceMap": true
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "**/*.test.ts", "**/*.spec.ts"]
 }
