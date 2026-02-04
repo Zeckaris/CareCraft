@@ -40,7 +40,6 @@
     "@types/datejs": "^0.0.36",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.0.0",
-    "@types/node": "^25.2.0",
     "@types/nodemailer": "^7.0.2",
     "@types/xlsx": "^0.0.35",
     "nodemon": "^3.1.10",
