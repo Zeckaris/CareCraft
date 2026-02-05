@@ -56,7 +56,7 @@ export const sendVerification = async (req: Request, res: Response) => {
 
   try {
     await brevoEmailApi.sendTransacEmail({
-      sender: { email: process.env.EMAIL_USER, name: 'CareCraft' },
+      sender: { email: process.env.EMAIL_FROM!, name: 'CareCraft' },
       to: [{ email }],
       subject: 'CareCraft Email Verification',
       htmlContent: `
