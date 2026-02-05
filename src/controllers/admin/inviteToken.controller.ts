@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import { InviteToken } from '../../models/inviteToken.model.js';  
 import jwt from 'jsonwebtoken';
-import { createInviteTokenMiddleware } from '../../middlewares/createInviteToken.middleware.js'
 import { sendInviteEmail, validateEmail } from '../../utils/emailVerification.util.js';
 import { sendResponse } from '../../utils/sendResponse.util.js'
 
@@ -20,38 +19,40 @@ const isAdminOrCoordinator = (req: Request): boolean => {
 
 export const sendInvite = async (req: Request, res: Response): Promise<void> => {
   const { targetEmail, role, tokenId } = req.body;
-  
+
   if (!targetEmail || !role) {
-    sendResponse(res, 400, false, 'targetEmail and role required.')
+    sendResponse(res, 400, false, 'targetEmail and role required.');
     return;
   }
 
   if (!validateEmail(targetEmail)) {
-    sendResponse(res, 400, false, 'Invalid email format.')
+    sendResponse(res, 400, false, 'Invalid email format.');
     return;
   }
 
   try {
     // Get token (from middleware or existing)
-    const tokenRecord = tokenId 
+    const tokenRecord = tokenId
       ? await InviteToken.findById(tokenId)
       : (req as any).inviteToken;
 
     if (!tokenRecord) {
-      sendResponse(res, 404, false, 'Token not found.')
+      sendResponse(res, 404, false, 'Token not found.');
       return;
     }
 
+    // Send **OTP** in email instead of JWT
     await sendInviteEmail(targetEmail, tokenRecord.token, role);
-    
+
     sendResponse(res, 200, true, `${role} invite sent to ${targetEmail}!`, {
-      tokenId: tokenRecord._id 
-    })
+      tokenId: tokenRecord._id
+    });
   } catch (error) {
-    sendResponse(res, 500, false, 'Failed to send invite.', null, error)
+    sendResponse(res, 500, false, 'Failed to send invite.', null, error);
     return;
   }
 };
+
 
 
 export const getInviteTokens = async (req: Request, res: Response) => {
