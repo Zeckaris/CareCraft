@@ -9,14 +9,19 @@ import {
   validateEmail, 
   sendInviteEmail, 
   validateVerificationCode, 
-  verificationCodes, 
-  transporter,
+  verificationCodes,
   mfaLoginCodes,
   sendMfaLoginCode,
   validateMfaLoginCode 
 } from '../../utils/emailVerification.util.js'
 import crypto from 'crypto';
 import { sendResponse } from '../../utils/sendResponse.util.js';
+import SibApiV3Sdk from 'sib-api-v3-sdk';
+
+
+const defaultClient = SibApiV3Sdk.ApiClient.instance;
+defaultClient.authentications['api-key'].apiKey = process.env.BREVO_API_KEY!;
+const brevoEmailApi = new SibApiV3Sdk.TransactionalEmailsApi();
 
 
 interface SignupRequestBody {
@@ -50,20 +55,20 @@ export const sendVerification = async (req: Request, res: Response) => {
   verificationCodes.set(email, { code, expiresAt });
 
   try {
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: email,
+    await brevoEmailApi.sendTransacEmail({
+      sender: { email: process.env.EMAIL_USER, name: 'CareCraft' },
+      to: [{ email }],
       subject: 'CareCraft Email Verification',
-      html: `
+      htmlContent: `
         <h2>Verify Your Email</h2>
         <p>Your verification code is: <strong>${code}</strong></p>
         <p><strong>Expires in 10 minutes</strong></p>
         <p>Enter this code on the signup page to continue.</p>
       `,
     });
-     sendResponse(res, 200, true, 'Verification code sent! Check your inbox.');
+    sendResponse(res, 200, true, 'Verification code sent! Check your inbox.');
   } catch (error) {
-    console.error('Email error:', error);
+    console.error('Brevo email error:', error);
     verificationCodes.delete(email);
     sendResponse(res, 500, false, 'Failed to send verification email.');
   }
