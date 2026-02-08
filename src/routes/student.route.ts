@@ -10,11 +10,21 @@ import {
 import { authMiddleware } from '../middlewares/auth.middleware.js'
 import { roleMiddleware } from '../middlewares/role.middleware.js'
 import { batchCreateStudents } from '../controllers/admin/student.batch.controller.js'
+import { createUpload } from '../middlewares/uploads.middleware.js'  
 
 const router = express.Router()
 
 
-router.post('/', authMiddleware, roleMiddleware('admin', 'coordinator'),createStudent)
+const uploadStudentAvatar = createUpload('avatars');  
+
+router.post(
+  '/',
+  authMiddleware,
+  roleMiddleware('admin', 'coordinator'),
+  uploadStudentAvatar.single('profileImage'),  
+  createStudent
+)
+
 router.post('/batch', authMiddleware, roleMiddleware('admin', 'coordinator'), batchCreateStudents);
 
 router.get('/', authMiddleware, async (req, res) => {
@@ -24,7 +34,15 @@ router.get('/', authMiddleware, async (req, res) => {
   return getAllStudents(req, res);
 });
 router.get('/:id', authMiddleware, getStudentById)
-router.put('/:id', authMiddleware, roleMiddleware('admin', 'coordinator'), updateStudent)
+
+router.put(
+  '/:id',
+  authMiddleware,
+  roleMiddleware('admin', 'coordinator'),
+  uploadStudentAvatar.single('profileImage'),  
+  updateStudent
+)
+
 router.delete('/:id', authMiddleware,roleMiddleware('admin', 'coordinator'), deleteStudent)
 
 export default router

@@ -1,8 +1,14 @@
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';  
 
 export const createUpload = (folderPath: string) => {
   const fullPath = path.join(import.meta.dirname, '..', '..', 'uploads', folderPath);
+
+  if (!fs.existsSync(fullPath)) {
+    fs.mkdirSync(fullPath, { recursive: true });
+  }
+
 
   const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -21,13 +27,13 @@ export const createUpload = (folderPath: string) => {
     fileFilter: (req, file, cb) => {
       const imageFolders = [
         'icons/badges',
-        'logos',              
+        'logos',
         'avatars',
-        'images',           
+        'images',
         'icons',
       ];
 
-      const isImageFolder = imageFolders.some(folder => 
+      const isImageFolder = imageFolders.some(folder =>
         folderPath.includes(folder) || folderPath.includes('image')
       );
 

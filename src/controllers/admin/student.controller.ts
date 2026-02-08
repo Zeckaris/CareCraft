@@ -9,27 +9,36 @@ import { AuthRequest } from '../../middlewares/auth.middleware.js'
 
 
 export const createStudent = async (req: AuthRequest, res: Response): Promise<void> => {
+  // --- Debug logs ---
+  console.log('--- createStudent called ---');
+  console.log('req.file:', req.file);
+  console.log('req.body:', req.body);
+
+  let profileImage = '';  
+  if (req.file) {
+    profileImage = `/uploads/avatars/${req.file.filename}`;  
+  }
+
   const {
     firstName,
     middleName,
     lastName,
     gender,
     dateOfBirth,
-    profileImage,
-  } = req.body
+  } = req.body;
 
   if (!firstName || !lastName || !gender || !dateOfBirth) {
-    sendResponse(res, 400, false, 'Missing required fields.')
-    return
+    sendResponse(res, 400, false, 'Missing required fields.');
+    return;
   }
 
-  const normalizedGender = gender.trim().charAt(0).toUpperCase()
+  const normalizedGender = gender.trim().charAt(0).toUpperCase();
   if (!['M', 'F'].includes(normalizedGender)) {
-    sendResponse(res, 400, false, 'Gender must be M or F (e.g., Male, Female, m, f).')
-    return
+    sendResponse(res, 400, false, 'Gender must be M or F (e.g., Male, Female, m, f).');
+    return;
   }
 
-  const admissionDate= Date.now()
+  const admissionDate = Date.now();
 
   try {
     const newStudent = await Student.create({
@@ -39,23 +48,23 @@ export const createStudent = async (req: AuthRequest, res: Response): Promise<vo
       gender: normalizedGender,
       dateOfBirth,
       admissionDate,
-      profileImage,
-    })
+      profileImage, 
+    });
 
     await logAudit(req, {
-    type: 'student_create',
-    action: 'created',
-    entity: `${newStudent.firstName} ${newStudent.lastName}`,
-    target: '', 
-  });
+      type: 'student_create',
+      action: 'created',
+      entity: `${newStudent.firstName} ${newStudent.lastName}`,
+      target: '', 
+    });
 
-
-    sendResponse(res, 201, true, 'Student created successfully.', newStudent)
+    sendResponse(res, 201, true, 'Student created successfully.', newStudent);
   } catch (error) {
-    sendResponse(res, 500, false, 'Error creating student.', null, error)
+    sendResponse(res, 500, false, 'Error creating student.', null, error);
     return;
   }
-}
+};
+
 
 
 export const getAllStudents = async (req: Request, res: Response): Promise<void> => {
@@ -129,6 +138,12 @@ export const updateStudent = async (req: AuthRequest, res: Response): Promise<vo
     return
   }
 
+
+  let profileImage = req.body.profileImage;  
+  if (req.file) {
+    profileImage = `/uploads/avatars/${req.file.filename}`;
+  }
+
   const { gender } = req.body
 
   if (gender !== undefined) {
@@ -141,7 +156,10 @@ export const updateStudent = async (req: AuthRequest, res: Response): Promise<vo
   }
 
   try {
-    const updatedStudent = await Student.findByIdAndUpdate(id, req.body, { new: true, runValidators: true })
+    const updatedStudent = await Student.findByIdAndUpdate(id, {
+      ...req.body,
+      profileImage, 
+    }, { new: true, runValidators: true })
     if (!updatedStudent) {
       sendResponse(res, 404, false, 'Student not found.')
       return
