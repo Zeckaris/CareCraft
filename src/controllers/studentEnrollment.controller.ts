@@ -1,15 +1,23 @@
 import { Request, Response } from 'express';
 import { StudentEnrollment } from '../models/studentEnrollment.model.js';
 import { Student } from '../models/student.model.js';
+import { AcademicCalendar } from '../models/academicCalendar.model.js'; // NEW: added this import
 import mongoose from 'mongoose';
 import { sendResponse } from '../utils/sendResponse.util.js';
 
-const getCurrentSchoolYear = (): string => {
-  const now = new Date()
-  const month = now.getMonth()
-  const year = now.getFullYear()
-  return month >= 6 ? `${year}-${year + 1}` : `${year - 1}-${year}`
-}
+const getCurrentActiveCalendar = async () => {
+  return await AcademicCalendar.findOne({ isCurrent: true });
+};
+
+const formatDate = (date: Date | string | undefined): string => {
+  if (!date) return 'N/A';
+  const d = new Date(date);
+  return d.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+};
 
 export const getAllEnrollments = async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 10, gradeId, schoolYear, isActive, search } = req.query;
@@ -109,16 +117,44 @@ export const getEnrollmentById = async (req: Request, res: Response): Promise<vo
 
 
 export const createEnrollment = async (req: Request, res: Response): Promise<void> => {
-  const { studentId, gradeId, schoolYear: providedYear } = req.body;
+  const { studentId, gradeId } = req.body;
 
   if (!mongoose.isValidObjectId(studentId) || !mongoose.isValidObjectId(gradeId)) {
     sendResponse(res, 400, false, 'Invalid studentId or gradeId');
     return;
   }
 
-  const schoolYear = providedYear || getCurrentSchoolYear();
-
   try {
+    // NEW: Fetch current active calendar
+    const currentCalendar = await getCurrentActiveCalendar();
+    if (!currentCalendar) {
+       sendResponse(res, 400, false, 'No active academic calendar found. Please set one first.');
+       return;
+    }
+
+    // NEW: Force schoolYear to current active calendar's value
+    const schoolYear = currentCalendar.academicYear;
+
+    // NEW: Check registration period (today must be between general start and new student end)
+    const today = new Date();
+    const regStart = currentCalendar.registrationStartDate;
+    const newRegEnd = currentCalendar.newStudentRegistrationEndDate;
+
+    if (
+      (regStart && today < new Date(regStart)) ||
+      (newRegEnd && today > new Date(newRegEnd))
+    ) {
+      sendResponse(
+        res,
+        403,
+        false,
+        `Enrollment period is closed. Current window: ${
+          regStart ? formatDate(regStart) : 'N/A'
+        } to ${newRegEnd ? formatDate(newRegEnd) : 'N/A'}`
+      );
+      return;
+    }
+
     const existing = await StudentEnrollment.findOne({ studentId, schoolYear, isActive: true });
     if (existing) {
       sendResponse(res, 400, false, `Student already has active enrollment for ${schoolYear}`);
@@ -257,19 +293,48 @@ export const getGradeEnrollments = async (req: Request, res: Response): Promise<
 };
 
 export const bulkCreateEnrollments = async (req: Request, res: Response): Promise<void> => {
-  const { studentIds, gradeId, schoolYear: providedYear } = req.body;
+  const { studentIds, gradeId } = req.body;
 
   if (!Array.isArray(studentIds) || !mongoose.isValidObjectId(gradeId)) {
     sendResponse(res, 400, false, 'Invalid studentIds array or gradeId');
     return;
   }
 
-  const schoolYear = providedYear || getCurrentSchoolYear();
-  const validStudentIds = studentIds.filter((id: string) => mongoose.isValidObjectId(id));
-  let successCount = 0;
-  const errors: string[] = [];
-
   try {
+    // NEW: Fetch current active calendar
+    const currentCalendar = await getCurrentActiveCalendar();
+    if (!currentCalendar) {
+      sendResponse(res, 400, false, 'No active academic calendar found. Please set one first.');
+      return;
+    }
+
+    // NEW: Force schoolYear to current active calendar's value
+    const schoolYear = currentCalendar.academicYear;
+
+    // NEW: Check registration period (today must be between general start and new student end)
+    const today = new Date();
+    const regStart = currentCalendar.registrationStartDate;
+    const newRegEnd = currentCalendar.newStudentRegistrationEndDate;
+
+    if (
+      (regStart && today < new Date(regStart)) ||
+      (newRegEnd && today > new Date(newRegEnd))
+    ) {
+      sendResponse(
+        res,
+        403,
+        false,
+        `Enrollment period is closed. Current window: ${
+          regStart ? formatDate(regStart) : 'N/A'
+        } to ${newRegEnd ? formatDate(newRegEnd) : 'N/A'}`
+      );
+      return;
+    }
+
+    const validStudentIds = studentIds.filter((id: string) => mongoose.isValidObjectId(id));
+    let successCount = 0;
+    const errors: string[] = [];
+
     for (let i = 0; i < validStudentIds.length; i += 50) {
       const batch = validStudentIds.slice(i, i + 50);
       const batchPromises = batch.map(async (studentId: string) => {
