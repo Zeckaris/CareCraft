@@ -35,13 +35,34 @@ export const getCalendarById = async (req: Request, res: Response) => {
 
 export const createCalendar = async (req: Request, res: Response) => {
   try {
-    const { academicYear, startDate, endDate } = req.body;
+    const { 
+      academicYear, 
+      startDate, 
+      endDate,
+      registrationStartDate,
+      registrationEndDate,
+      newStudentRegistrationStartDate,
+      newStudentRegistrationEndDate,
+      holidayDates
+    } = req.body;
+
     if (!academicYear || !startDate || !endDate)
       return sendResponse(res, 400, false, "Missing required fields");
+
     const exists = await AcademicCalendar.findOne({ academicYear });
     if (exists) return sendResponse(res, 400, false, "Academic year already exists");
 
-    const calendar = await AcademicCalendar.create({ academicYear, startDate, endDate });
+    const calendar = await AcademicCalendar.create({ 
+      academicYear, 
+      startDate, 
+      endDate,
+      registrationStartDate,
+      registrationEndDate,
+      newStudentRegistrationStartDate,
+      newStudentRegistrationEndDate,
+      holidayDates: holidayDates || [] 
+    });
+
     sendResponse(res, 201, true, "Academic calendar created", calendar);
   } catch (error) {
     sendResponse(res, 500, false, "Server error", null, error);
