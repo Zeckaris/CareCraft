@@ -1,8 +1,9 @@
 import { Request, Response } from "express";
 import { SchoolInfo } from '../../models/schoolInfo.model.js';
 import { sendResponse } from '../../utils/sendResponse.util.js';
-import path from 'path';
-import fs from 'fs';
+
+// Cloudinary integration
+import { uploadToCloudinary, deleteFromCloudinary } from '../../utils/cloudinary.util.js';
 
 // Branding validation constants (matching schema enums)
 const VALID_THEMES = [
@@ -50,9 +51,16 @@ export const createSchoolInfo = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    const logoPath = req.file 
-      ? `/uploads/images/school/${req.file.filename}` 
-      : null;
+    let logoPath: string | null = null;
+    if (req.file) {
+      const { url } = await uploadToCloudinary(
+        req.file.buffer,
+        'images/school',  // Cloudinary folder
+        undefined,
+        'image'
+      );
+      logoPath = url;
+    }
 
     const schoolInfo = new SchoolInfo({
       ...req.body,
@@ -79,7 +87,6 @@ export const getSchoolInfo = async (req: Request, res: Response): Promise<void> 
       sendResponse(res, 404, false, "School info not found");
       return;
     }
-
     sendResponse(res, 200, true, "School info fetched successfully", schoolInfo);
   } catch (error) {
     sendResponse(res, 500, false, "Internal server error", null, error);
@@ -94,27 +101,37 @@ export const updateSchoolInfo = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    // Handle logo update
+    let logoPath: string | null | undefined = schoolInfo.logo;
     if (req.file) {
+      // Delete old logo if exists
       if (schoolInfo.logo) {
-        const oldPath = path.join(import.meta.dirname, '..', '..', schoolInfo.logo);
-        if (fs.existsSync(oldPath)) {
-          fs.unlinkSync(oldPath);
+        try {
+          const urlParts = schoolInfo.logo.split('/');
+          const filenameWithExt = urlParts[urlParts.length - 1];
+          const publicId = urlParts.slice(-2, -1)[0] + '/' + filenameWithExt.split('.')[0];
+          await deleteFromCloudinary(publicId);
+        } catch (deleteErr) {
+          console.warn('Failed to delete old Cloudinary logo:', deleteErr);
         }
       }
-      req.body.logo = `/uploads/images/school/${req.file.filename}`;
+
+      const { url } = await uploadToCloudinary(
+        req.file.buffer,
+        'images/school',
+        undefined,
+        'image'
+      );
+      logoPath = url;
     }
 
-    const updateData: any = {};
-    for (const [key, value] of Object.entries(req.body)) {
-      if (value !== undefined && value !== null) {
-        updateData[key] = value;
-      }
-    }
+    const updateData = {
+      ...req.body,
+      logo: logoPath,
+    };
 
     const updatedInfo = await SchoolInfo.findByIdAndUpdate(
-      schoolInfo._id, 
-      updateData, 
+      schoolInfo._id,
+      updateData,
       {
         new: true,
         runValidators: true,
@@ -185,6 +202,18 @@ export const deleteSchoolInfo = async (req: Request, res: Response): Promise<voi
     if (!schoolInfo) {
       sendResponse(res, 404, false, "School info not found");
       return;
+    }
+
+    // Optional: delete logo from Cloudinary
+    if (schoolInfo.logo) {
+      try {
+        const urlParts = schoolInfo.logo.split('/');
+        const filenameWithExt = urlParts[urlParts.length - 1];
+        const publicId = urlParts.slice(-2, -1)[0] + '/' + filenameWithExt.split('.')[0];
+        await deleteFromCloudinary(publicId);
+      } catch (deleteErr) {
+        console.warn('Failed to delete Cloudinary logo on delete:', deleteErr);
+      }
     }
 
     await SchoolInfo.findByIdAndDelete(schoolInfo._id);
