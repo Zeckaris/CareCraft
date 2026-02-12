@@ -6,17 +6,20 @@ import { sendResponse } from '../../utils/sendResponse.util.js'
 import { logAudit } from '../../utils/auditLogger.util.js'
 import { AuthRequest } from '../../middlewares/auth.middleware.js'
 
-
+// Cloudinary integration
+import { uploadToCloudinary, deleteFromCloudinary } from '../../utils/cloudinary.util.js';
 
 export const createStudent = async (req: AuthRequest, res: Response): Promise<void> => {
-  // --- Debug logs ---
-  console.log('--- createStudent called ---');
-  console.log('req.file:', req.file);
-  console.log('req.body:', req.body);
 
   let profileImage = '';  
   if (req.file) {
-    profileImage = `/uploads/avatars/${req.file.filename}`;  
+    const { url } = await uploadToCloudinary(
+      req.file.buffer,
+      'avatars',  // Cloudinary folder
+      undefined,
+      'image'
+    );
+    profileImage = url;
   }
 
   const {
@@ -116,16 +119,21 @@ export const getStudentById = async (req: Request, res: Response): Promise<void>
 
   try {
     const student = await Student.findById(id)
-      .populate('enrollmentId', 'gradeId schoolYear isActive')
+      .populate({
+        path: 'enrollmentId',
+        select: 'gradeId schoolYear isActive',
+        populate: { path: 'gradeId', select: 'level' }
+      })
       .populate('parentId', 'firstName lastName email phoneNumber')
+
     if (!student) {
       sendResponse(res, 404, false, 'Student not found.')
       return
     }
+
     sendResponse(res, 200, true, 'Student fetched successfully.', student)
   } catch (error) {
     sendResponse(res, 500, false, 'Error fetching student.', null, error)
-    return;
   }
 }
 
@@ -138,13 +146,36 @@ export const updateStudent = async (req: AuthRequest, res: Response): Promise<vo
     return
   }
 
+  let { firstName, middleName, lastName, gender, dateOfBirth } = req.body
 
-  let profileImage = req.body.profileImage;  
+  let profileImage: string | undefined;
   if (req.file) {
-    profileImage = `/uploads/avatars/${req.file.filename}`;
-  }
+    const student = await Student.findById(id);
+    if (!student) {
+      sendResponse(res, 404, false, 'Student not found.')
+      return
+    }
 
-  const { gender } = req.body
+    // Delete old image if exists
+    if (student.profileImage) {
+      try {
+        const urlParts = student.profileImage.split('/');
+        const filenameWithExt = urlParts[urlParts.length - 1];
+        const publicId = urlParts.slice(-2, -1)[0] + '/' + filenameWithExt.split('.')[0];
+        await deleteFromCloudinary(publicId);
+      } catch (deleteErr) {
+        console.warn('Failed to delete old Cloudinary avatar:', deleteErr);
+      }
+    }
+
+    const { url } = await uploadToCloudinary(
+      req.file.buffer,
+      'avatars',
+      undefined,
+      'image'
+    );
+    profileImage = url;
+  }
 
   if (gender !== undefined) {
     const normalizedGender = gender.trim().charAt(0).toUpperCase()
@@ -158,7 +189,7 @@ export const updateStudent = async (req: AuthRequest, res: Response): Promise<vo
   try {
     const updatedStudent = await Student.findByIdAndUpdate(id, {
       ...req.body,
-      profileImage, 
+      ...(profileImage && { profileImage }),  // Only update if new image uploaded
     }, { new: true, runValidators: true })
     if (!updatedStudent) {
       sendResponse(res, 404, false, 'Student not found.')
@@ -193,6 +224,19 @@ export const deleteStudent = async (req: AuthRequest, res: Response): Promise<vo
       sendResponse(res, 404, false, 'Student not found.')
       return
     }
+
+    // Optional: delete avatar from Cloudinary on delete
+    if (deletedStudent.profileImage) {
+      try {
+        const urlParts = deletedStudent.profileImage.split('/');
+        const filenameWithExt = urlParts[urlParts.length - 1];
+        const publicId = urlParts.slice(-2, -1)[0] + '/' + filenameWithExt.split('.')[0];
+        await deleteFromCloudinary(publicId);
+      } catch (deleteErr) {
+        console.warn('Failed to delete Cloudinary avatar on student delete:', deleteErr);
+      }
+    }
+
 await logAudit(req, {
     type: 'student_delete',
     action: 'deleted',

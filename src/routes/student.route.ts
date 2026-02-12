@@ -10,18 +10,17 @@ import {
 import { authMiddleware } from '../middlewares/auth.middleware.js'
 import { roleMiddleware } from '../middlewares/role.middleware.js'
 import { batchCreateStudents } from '../controllers/admin/student.batch.controller.js'
-import { createUpload } from '../middlewares/uploads.middleware.js'  
+import multer from 'multer';  
 
 const router = express.Router()
 
-
-const uploadStudentAvatar = createUpload('avatars');  
+const memoryUpload = multer({ storage: multer.memoryStorage() });
 
 router.post(
   '/',
   authMiddleware,
   roleMiddleware('admin', 'coordinator'),
-  uploadStudentAvatar.single('profileImage'),  
+  memoryUpload.single('profileImage'), 
   createStudent
 )
 
@@ -39,7 +38,7 @@ router.put(
   '/:id',
   authMiddleware,
   roleMiddleware('admin', 'coordinator'),
-  uploadStudentAvatar.single('profileImage'),  
+  memoryUpload.single('profileImage'),  
   updateStudent
 )
 
