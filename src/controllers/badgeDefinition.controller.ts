@@ -5,10 +5,11 @@ import { BadgeCriteria } from '../models/badgeCriteria.model.js';
 import { StudentBadge } from '../models/studentBadge.model.js';
 import { AttributeCategory } from '../models/attributeCategory.model.js';
 import { ActionPlan } from '../models/actionPlan.model.js';
-import  UserAccount  from '../models/userAccount.model.js';
+import UserAccount from '../models/userAccount.model.js';
 import { sendResponse } from '../utils/sendResponse.util.js';
-import path from 'path';
-import fs from 'fs';
+
+
+import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.util.js';
 
 interface AuthRequest extends Request {
   user?: {
@@ -102,63 +103,26 @@ export const createBadgeDefinition = async (req: AuthRequest, res: Response): Pr
     return;
   }
 
-  if (name.length > 100) {
-    sendResponse(res, 400, false, 'Name must be 100 characters or less');
-    return;
-  }
-
   try {
-    const user = await UserAccount.findById(createdBy);
-    if (!user || !['admin', 'coordinator', 'teacher'].includes(user.role)) {
-      sendResponse(res, 403, false, 'Access denied: user lacks required role');
-      return;
-    }
-
-    const existingBadge = await BadgeDefinition.findOne({ name, level });
-    if (existingBadge) {
-      sendResponse(res, 400, false, 'Badge definition with this name and level already exists');
-      return;
-    }
-
-    if (criteria.length > 0) {
-      const validCriteria = await BadgeCriteria.find({ _id: { $in: criteria } });
-      if (validCriteria.length !== criteria.length) {
-        sendResponse(res, 400, false, 'One or more criteria IDs are invalid');
-        return;
-      }
-      for (const crit of validCriteria) {
-        if (crit.attributeCategoryId && !(await AttributeCategory.findById(crit.attributeCategoryId))) {
-          sendResponse(res, 400, false, `Invalid attributeCategoryId in criteria: ${crit._id}`);
-          return;
-        }
-        if (crit.actionPlanId && !(await ActionPlan.findById(crit.actionPlanId))) {
-          sendResponse(res, 400, false, `Invalid actionPlanId in criteria: ${crit._id}`);
-          return;
-        }
-      }
-    }
-
-    // Handle icon upload
-    let iconPath = '';
+    let icon: string | undefined;
     if (req.file) {
-      iconPath = `/uploads/icons/badges/${req.file.filename}`;
+      const uploadResult = await uploadToCloudinary(
+        req.file.buffer,
+        'icons/badges',
+        undefined,
+        'image'
+      );
+      icon = uploadResult.url;
     }
 
     const badge = await BadgeDefinition.create({
       name,
       description,
-      icon: iconPath,
-      createdBy,
-      level,
+      level: Number(level),
       criteria,
+      icon,
+      createdBy,
     });
-
-    if (criteria.length > 0) {
-      await BadgeCriteria.updateMany(
-        { _id: { $in: criteria } },
-        { $set: { badgeDefinitionId: badge._id } }
-      );
-    }
 
     const populated = await BadgeDefinition.findById(badge._id)
       .populate('criteria', 'type attributeCategoryId minScore actionPlanId minProgress minObservations scope')
@@ -170,48 +134,67 @@ export const createBadgeDefinition = async (req: AuthRequest, res: Response): Pr
   }
 };
 
+
+
 export const updateBadgeDefinition = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
+
+  if (!mongoose.isValidObjectId(id)) {
+    sendResponse(res, 400, false, "Invalid badge definition ID");
+    return;
+  }
+
   let { name, description, level, criteria } = req.body;
 
   name = name?.trim();
   description = description?.trim();
 
-  if (!mongoose.isValidObjectId(id)) {
-    sendResponse(res, 400, false, 'Invalid badge definition ID');
-    return;
-  }
-
+  // At least one field must be provided for update
   if (!name && !description && level === undefined && criteria === undefined && !req.file) {
-    sendResponse(res, 400, false, 'At least one field (name, description, level, criteria, or icon) required');
+    sendResponse(res, 400, false, "At least one field (name, description, level, criteria, or icon) required");
     return;
   }
 
   try {
     const badge = await BadgeDefinition.findById(id);
     if (!badge) {
-      sendResponse(res, 404, false, 'BadgeDefinition not found');
+      sendResponse(res, 404, false, "BadgeDefinition not found");
       return;
     }
 
-    // Duplicate check if name or level changing
-    if ((name && name !== badge.name) || (level !== undefined && level !== badge.level)) {
+    // Prepare values for duplicate check
+    let checkName = name || badge.name;
+    let checkLevel = badge.level;
+
+    // Handle level for duplicate check (only if level is being changed)
+    if (level !== undefined && level !== "" && level !== null) {
+      const parsedLevel = Number(level);
+      if (isNaN(parsedLevel)) {
+        sendResponse(res, 400, false, "Invalid level value - must be a number");
+        return;
+      }
+      checkLevel = parsedLevel;
+    }
+
+    // Duplicate check only when name or level is changing
+    if ((name && name !== badge.name) || checkLevel !== badge.level) {
       const existing = await BadgeDefinition.findOne({
-        name: name || badge.name,
-        level: level !== undefined ? level : badge.level,
-        _id: { $ne: id }
+        name: checkName,
+        level: checkLevel,
+        _id: { $ne: id },
       });
+
       if (existing) {
-        sendResponse(res, 400, false, 'Badge definition with this name and level already exists');
+        sendResponse(res, 400, false, "Badge definition with this name and level already exists");
         return;
       }
     }
 
-    // Validate criteria if provided
-    if (criteria && criteria.length > 0) {
+    // Validate criteria if provided in request
+    if (criteria !== undefined && criteria.length > 0) {
       const validCriteria = await BadgeCriteria.find({ _id: { $in: criteria } });
       if (validCriteria.length !== criteria.length) {
-        sendResponse(res, 400, false, 'One or more criteria IDs are invalid');
+        sendResponse(res, 400, false, "One or more criteria IDs are invalid");
         return;
       }
       for (const crit of validCriteria) {
@@ -222,33 +205,72 @@ export const updateBadgeDefinition = async (req: AuthRequest, res: Response): Pr
       }
     }
 
+    // Build update object — only include fields that were actually sent
     const updateData: any = {};
-    if (name) updateData.name = name;
-    if (description) updateData.description = description;
-    if (level !== undefined) updateData.level = level;
-    if (criteria) updateData.criteria = criteria;
 
-    // Handle icon upload and old file deletion
-    if (req.file) {
-      // Delete old icon if exists
-      if (badge.icon) {
-        const oldPath = path.join(import.meta.dirname, '..', '..', badge.icon);
-        if (fs.existsSync(oldPath)) {
-          fs.unlinkSync(oldPath);
-        }
+    if (name !== undefined) {
+      updateData.name = name;
+    }
+    if (description !== undefined) {
+      updateData.description = description;
+    }
+    if (level !== undefined && level !== "" && level !== null) {
+      const parsed = Number(level);
+      if (!isNaN(parsed)) {
+        updateData.level = parsed;
+      } else {
+        sendResponse(res, 400, false, "Invalid level value - must be a number");
+        return;
       }
-      updateData.icon = `/uploads/icons/badges/${req.file.filename}`;
+    }
+    if (criteria !== undefined) {
+      updateData.criteria = criteria;
     }
 
-    const updated = await BadgeDefinition.findByIdAndUpdate(id, updateData, { new: true })
-      .populate('criteria', 'type attributeCategoryId minScore actionPlanId minProgress minObservations scope')
-      .populate('createdBy', 'firstName lastName email role');
+    // Handle icon upload / replacement
+    if (req.file) {
+      // Delete old icon if it exists
+      if (badge.icon) {
+        try {
+          const urlParts = badge.icon.split("/");
+          const filenameWithExt = urlParts[urlParts.length - 1];
+          const publicId = urlParts.slice(-2, -1)[0] + "/" + filenameWithExt.split(".")[0];
+          await deleteFromCloudinary(publicId);
+        } catch (deleteErr) {
+          console.warn("Failed to delete old Cloudinary icon:", deleteErr);
+        }
+      }
 
-    sendResponse(res, 200, true, 'Badge definition updated successfully', updated);
+      // Upload new icon
+      const uploadResult = await uploadToCloudinary(
+        req.file.buffer,
+        "icons/badges",
+        undefined,
+        "image"
+      );
+      updateData.icon = uploadResult.url;
+    }
+
+    // Perform the update
+    const updated = await BadgeDefinition.findByIdAndUpdate(id, updateData, { new: true })
+      .populate("criteria", "type attributeCategoryId minScore actionPlanId minProgress minObservations scope")
+      .populate("createdBy", "firstName lastName email role");
+
+    sendResponse(res, 200, true, "Badge definition updated successfully", updated);
   } catch (error) {
-    sendResponse(res, 500, false, `Server error updating badge definition: ${(error as Error).message}`, null, error);
+    sendResponse(
+      res,
+      500,
+      false,
+      `Server error updating badge definition: ${(error as Error).message}`,
+      null,
+      error
+    );
   }
 };
+
+
+
 
 export const deleteBadgeDefinition = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
@@ -273,6 +295,17 @@ export const deleteBadgeDefinition = async (req: Request, res: Response): Promis
     if (dependencies.length > 0) {
       sendResponse(res, 400, false, `Cannot delete badge definition; it is used by: ${dependencies.join(', ')}`);
       return;
+    }
+
+    if (badge.icon) {
+      try {
+        const urlParts = badge.icon.split('/');
+        const filenameWithExt = urlParts[urlParts.length - 1];
+        const publicId = urlParts.slice(-2, -1)[0] + '/' + filenameWithExt.split('.')[0];
+        await deleteFromCloudinary(publicId);
+      } catch (deleteErr) {
+        console.warn('Failed to delete Cloudinary icon on badge delete:', deleteErr);
+      }
     }
 
     await BadgeDefinition.findByIdAndDelete(id);
