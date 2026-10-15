@@ -14,6 +14,12 @@ const conductedAssessmentSchema = new Schema<IConductedAssessment>(
       ref: 'AcademicTerm',
       required: true,
     },
+    /** Which section these conducted stages belong to */
+    sectionId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Section',
+      required: true,
+    },
     conductedStages: [
       {
         type: Schema.Types.ObjectId,
@@ -29,9 +35,13 @@ const conductedAssessmentSchema = new Schema<IConductedAssessment>(
   { timestamps: true }
 );
 
-
+// One conducted-assessment record per GSA + term + section
+conductedAssessmentSchema.index(
+  { gsaId: 1, academicTermId: 1, sectionId: 1 },
+  { unique: true }
+);
 
 export const ConductedAssessment = model<IConductedAssessment>(
   'ConductedAssessment',
   conductedAssessmentSchema
-);
+);

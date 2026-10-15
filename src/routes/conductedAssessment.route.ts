@@ -23,9 +23,9 @@ router.patch('/:id/mark-stage',
   markStageConducted
 );
 
-// Admin + Coordinator only for everything else
-router.get('/', authMiddleware, roleMiddleware('admin', 'coordinator'), getAllConducted);
-router.get('/:id', authMiddleware, roleMiddleware('admin', 'coordinator'), getConductedById);
+// Admin + Coordinator + Teacher can list and view conducted assessments (scoped inside controller)
+router.get('/', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), getAllConducted);
+router.get('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), getConductedById);
 router.post('/', authMiddleware, roleMiddleware('admin', 'coordinator'), createConducted);
 router.put('/:id/status', authMiddleware, roleMiddleware('admin', 'coordinator'), updateStatus);
 

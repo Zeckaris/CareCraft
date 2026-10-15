@@ -20,18 +20,18 @@ router.post('/generate/bulk', authMiddleware, roleMiddleware('admin', 'coordinat
 router.post('/generate/single', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), generateSingleScore)
 router.post('/generate/multiple', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), generateMultipleScores)
 
-// GET (Any authenticated)
-router.get('/', authMiddleware, getAllAssessmentScores)
-router.get('/:id', authMiddleware, getAssessmentScoreById)
+// GET (Admin/Coordinator/Teacher/Parent)
+router.get('/', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher', 'parent'), getAllAssessmentScores)
+router.get('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher', 'parent'), getAssessmentScoreById)
 
-// UPDATE (Teacher only)
-router.put('/:id', authMiddleware, roleMiddleware('teacher'), updateAssessmentScore)
-router.patch('/batch-type', authMiddleware, roleMiddleware('teacher'), batchUpdateScoresForType)
+// UPDATE (Admin/Coordinator/Teacher)
+router.put('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), updateAssessmentScore)
+router.patch('/batch-type', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), batchUpdateScoresForType)
 
-// DELETE (Teacher only)
-router.delete('/:id', authMiddleware, roleMiddleware('teacher'), deleteAssessmentScore)
+// DELETE (Admin/Coordinator/Teacher)
+router.delete('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), deleteAssessmentScore)
 
-// CONDUCT STAGE (Teacher only) 
-router.post('/grade-subject-assessments/:id/conduct', authMiddleware, roleMiddleware('teacher'), markStageConducted)
+// CONDUCT STAGE (Admin/Coordinator/Teacher) 
+router.post('/grade-subject-assessments/:id/conduct', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), markStageConducted)
 
 export default router
