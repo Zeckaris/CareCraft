@@ -36,8 +36,10 @@ import broadcastMessageRouter from './routes/admin/broadcastMessage.route.js';
 import notificationRouter from './routes/notification.route.js';
 import sectionRouter from './routes/section.route.js';
 import teachingAssignmentRouter from './routes/teachingAssignment.route.js';
+import attendanceRouter from './routes/attendance.route.js';
 
 import './workers/broadcast.worker.js';
+import './workers/absenceNotification.worker.js';
 
 // ===== Fix for ESM =====
 const rootDir = path.join(import.meta.dirname, '..');
@@ -100,6 +102,7 @@ app.use('/api/broadcast', broadcastMessageRouter);
 app.use('/api/notifications', notificationRouter);
 app.use('/api/section', sectionRouter);
 app.use('/api/teaching-assignment', teachingAssignmentRouter);
+app.use('/api/attendance', attendanceRouter);
 
 // ===== DB + Server Start =====
 connectDB().then(() => {
