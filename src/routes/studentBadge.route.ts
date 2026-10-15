@@ -11,10 +11,12 @@ import {
 
 const router = express.Router();
 
-router.get('/', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), getAllStudentBadges);
-router.get('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), getStudentBadgeById);
+// Parent can read their child's badges; access scoping is done inside the controller
+router.get('/', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher', 'parent'), getAllStudentBadges);
+router.get('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher', 'parent'), getStudentBadgeById);
+// Only homeroom teachers/admins/coordinators may write
 router.post('/', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), createStudentBadge);
 router.put('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), updateStudentBadge);
 router.delete('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), deleteStudentBadge);
 
-export default router;
+export default router;

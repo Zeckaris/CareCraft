@@ -1,29 +1,70 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import mongoose from 'mongoose';
 import { AttributeEvaluation } from '../models/attributeEvaluation.model.js';
 import { Student } from '../models/student.model.js';
-import  UserAccount from '../models/userAccount.model.js';
+import UserAccount from '../models/userAccount.model.js';
 import { StudentEnrollment } from '../models/studentEnrollment.model.js';
 import { BadgeCriteria } from '../models/badgeCriteria.model.js';
 import { AttributeCategory } from '../models/attributeCategory.model.js';
 import { sendResponse } from '../utils/sendResponse.util.js';
+import { AuthRequest } from '../middlewares/auth.middleware.js';
+import {
+  resolveTeacherId,
+  assertTeacherCanWriteStudent,
+  assertTeacherCanReadStudent,
+  assertParentOwnsStudent,
+  getTeacherSectionIds,
+} from '../middlewares/access.middleware.js';
 
-export const getAllAttributeEvaluations = async (req: Request, res: Response): Promise<void> => {
+// ─── helper ───────────────────────────────────────────────────────────────────
+
+async function buildStudentConstraint(req: AuthRequest): Promise<any> {
+  const user = req.user!
+  if (['admin', 'coordinator'].includes(user.role)) return {}
+
+  if (user.role === 'parent') {
+    const myStudent = await Student.findOne({ parentId: user.id }).select('_id').lean()
+    if (!myStudent) return { studentId: new mongoose.Types.ObjectId() }
+    return { studentId: myStudent._id }
+  }
+
+  if (user.role === 'teacher') {
+    const sectionIds = await getTeacherSectionIds(user.id)
+    const enrollments = await StudentEnrollment.find({
+      sectionId: { $in: sectionIds },
+      isActive: true,
+    }).select('studentId').lean()
+    const studentIds = enrollments.map(e => e.studentId)
+    return { studentId: { $in: studentIds } }
+  }
+
+  return { studentId: new mongoose.Types.ObjectId() }
+}
+
+// ─── GET ALL ──────────────────────────────────────────────────────────────────
+
+export const getAllAttributeEvaluations = async (req: AuthRequest, res: Response): Promise<void> => {
   const { page = 1, limit = 10, teacherId, studentId, enrollmentId } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
 
-  const filter: any = {};
-  if (teacherId) {
-    if (!mongoose.isValidObjectId(teacherId)) {
-      sendResponse(res, 400, false, 'Invalid teacherId');
-      return;
+  const constraint = await buildStudentConstraint(req);
+  const filter: any = { ...constraint };
+
+  const user = req.user!
+  // teacherId filter: only admin/coordinator may filter by arbitrary teacher
+  if (['admin', 'coordinator'].includes(user.role)) {
+    if (teacherId) {
+      if (!mongoose.isValidObjectId(teacherId)) {
+        sendResponse(res, 400, false, 'Invalid teacherId');
+        return;
+      }
+      const userDoc = await UserAccount.findById(teacherId);
+      if (!userDoc || !['admin', 'teacher'].includes(userDoc.role)) {
+        sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role');
+        return;
+      }
+      filter.teacherId = teacherId;
     }
-    const user = await UserAccount.findById(teacherId);
-    if (!user || !['admin', 'teacher'].includes(user.role)) {
-      sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role');
-      return;
-    }
-    filter.teacherId = teacherId;
   }
   if (studentId) {
     if (!mongoose.isValidObjectId(studentId)) {
@@ -62,7 +103,9 @@ export const getAllAttributeEvaluations = async (req: Request, res: Response): P
   }
 };
 
-export const getAttributeEvaluationsByStudent = async (req: Request, res: Response): Promise<void> => {
+// ─── GET BY STUDENT ───────────────────────────────────────────────────────────
+
+export const getAttributeEvaluationsByStudent = async (req: AuthRequest, res: Response): Promise<void> => {
   const { studentId } = req.params;
   const { page = 1, limit = 10, enrollmentId } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
@@ -71,22 +114,30 @@ export const getAttributeEvaluationsByStudent = async (req: Request, res: Respon
     sendResponse(res, 400, false, 'Invalid studentId');
     return;
   }
-  const student = await Student.findById(studentId);
-  if (!student) {
-    sendResponse(res, 404, false, 'Student not found');
-    return;
-  }
-
-  const filter: any = { studentId };
-  if (enrollmentId) {
-    if (!mongoose.isValidObjectId(enrollmentId)) {
-      sendResponse(res, 400, false, 'Invalid enrollmentId');
-      return;
-    }
-    filter.studentEnrollmentId = enrollmentId;
-  }
 
   try {
+    const user = req.user!
+    if (user.role === 'parent') {
+      await assertParentOwnsStudent(user.id, studentId)
+    } else if (user.role === 'teacher') {
+      await assertTeacherCanReadStudent(user.id, studentId)
+    }
+
+    const student = await Student.findById(studentId);
+    if (!student) {
+      sendResponse(res, 404, false, 'Student not found');
+      return;
+    }
+
+    const filter: any = { studentId };
+    if (enrollmentId) {
+      if (!mongoose.isValidObjectId(enrollmentId)) {
+        sendResponse(res, 400, false, 'Invalid enrollmentId');
+        return;
+      }
+      filter.studentEnrollmentId = enrollmentId;
+    }
+
     const evaluations = await AttributeEvaluation.find(filter)
       .populate('studentId', 'firstName lastName')
       .populate('teacherId', 'firstName lastName email role')
@@ -103,12 +154,14 @@ export const getAttributeEvaluationsByStudent = async (req: Request, res: Respon
       page: Number(page),
       limit: Number(limit)
     });
-  } catch (error) {
-    sendResponse(res, 500, false, `Server error fetching evaluations: ${(error as Error).message}`, null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || `Server error fetching evaluations`, null, error);
   }
 };
 
-export const getAttributeEvaluationsByTeacher = async (req: Request, res: Response): Promise<void> => {
+// ─── GET BY TEACHER ───────────────────────────────────────────────────────────
+
+export const getAttributeEvaluationsByTeacher = async (req: AuthRequest, res: Response): Promise<void> => {
   const { teacherId } = req.params;
   const { page = 1, limit = 10, studentId } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
@@ -117,8 +170,16 @@ export const getAttributeEvaluationsByTeacher = async (req: Request, res: Respon
     sendResponse(res, 400, false, 'Invalid teacherId');
     return;
   }
-  const user = await UserAccount.findById(teacherId);
-  if (!user || !['admin', 'teacher'].includes(user.role)) {
+
+  // Teachers may only query their own evaluations
+  const user = req.user!
+  if (user.role === 'teacher' && teacherId !== user.id.toString()) {
+    sendResponse(res, 403, false, 'Forbidden: You can only view your own evaluations');
+    return;
+  }
+
+  const userDoc = await UserAccount.findById(teacherId);
+  if (!userDoc || !['admin', 'teacher'].includes(userDoc.role)) {
     sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role');
     return;
   }
@@ -154,8 +215,9 @@ export const getAttributeEvaluationsByTeacher = async (req: Request, res: Respon
   }
 };
 
+// ─── GET BY ID ────────────────────────────────────────────────────────────────
 
-export const getAttributeEvaluationById = async (req: Request, res: Response): Promise<void> => {
+export const getAttributeEvaluationById = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
@@ -174,28 +236,37 @@ export const getAttributeEvaluationById = async (req: Request, res: Response): P
       sendResponse(res, 404, false, 'AttributeEvaluation not found');
       return;
     }
+
+    const user = req.user!
+    const studentId = (evaluation.studentId as any)?._id || evaluation.studentId
+    if (user.role === 'parent') {
+      await assertParentOwnsStudent(user.id, studentId)
+    } else if (user.role === 'teacher') {
+      await assertTeacherCanReadStudent(user.id, studentId)
+    }
+
     sendResponse(res, 200, true, 'Attribute evaluation fetched successfully', evaluation);
-  } catch (error) {
-    sendResponse(res, 500, false, `Server error fetching evaluation: ${(error as Error).message}`, null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || `Server error fetching evaluation`, null, error);
   }
 };
 
-export const createAttributeEvaluation = async (req: Request, res: Response): Promise<void> => {
-  const { studentId, teacherId, studentEnrollmentId, attributes, remark } = req.body;
+// ─── CREATE ───────────────────────────────────────────────────────────────────
+
+export const createAttributeEvaluation = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { studentId, studentEnrollmentId, attributes, remark } = req.body;
+
+  // teacherId always from the logged-in user
+  const effectiveTeacherId = resolveTeacherId(req);
 
   // Validate required fields
-  if (!studentId || !teacherId || !studentEnrollmentId || !attributes || !Array.isArray(attributes) || attributes.length === 0) {
-    sendResponse(res, 400, false, 'Missing required fields: studentId, teacherId, studentEnrollmentId, attributes (non-empty array)');
+  if (!studentId || !studentEnrollmentId || !attributes || !Array.isArray(attributes) || attributes.length === 0) {
+    sendResponse(res, 400, false, 'Missing required fields: studentId, studentEnrollmentId, attributes (non-empty array)');
     return;
   }
 
-  // Validate IDs
   if (!mongoose.isValidObjectId(studentId)) {
     sendResponse(res, 400, false, 'Invalid studentId');
-    return;
-  }
-  if (!mongoose.isValidObjectId(teacherId)) {
-    sendResponse(res, 400, false, 'Invalid teacherId');
     return;
   }
   if (!mongoose.isValidObjectId(studentEnrollmentId)) {
@@ -204,9 +275,9 @@ export const createAttributeEvaluation = async (req: Request, res: Response): Pr
   }
 
   // Validate attributes
-  if (!attributes.every((item: any) => 
-    item && 
-    mongoose.isValidObjectId(item.attributeId) && 
+  if (!attributes.every((item: any) =>
+    item &&
+    mongoose.isValidObjectId(item.attributeId) &&
     typeof item.score === 'number' && item.score >= 1 && item.score <= 5 &&
     (item.comment === undefined || (typeof item.comment === 'string' && item.comment.length <= 200))
   )) {
@@ -221,14 +292,20 @@ export const createAttributeEvaluation = async (req: Request, res: Response): Pr
   }
 
   try {
+    // Access guard: homeroom teacher only
+    const user = req.user!
+    if (user.role === 'teacher') {
+      await assertTeacherCanWriteStudent(effectiveTeacherId, studentId)
+    }
+
     // Validate references
     const student = await Student.findById(studentId);
     if (!student) {
       sendResponse(res, 404, false, 'Student not found');
       return;
     }
-    const user = await UserAccount.findById(teacherId);
-    if (!user || !['admin', 'teacher'].includes(user.role)) {
+    const userDoc = await UserAccount.findById(effectiveTeacherId);
+    if (!userDoc || !['admin', 'teacher'].includes(userDoc.role)) {
       sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role (admin, teacher)');
       return;
     }
@@ -250,14 +327,14 @@ export const createAttributeEvaluation = async (req: Request, res: Response): Pr
 
     const evaluation = new AttributeEvaluation({
       studentId,
-      teacherId,
+      teacherId: effectiveTeacherId,
       studentEnrollmentId,
       attributes: attributes.map((item: any) => ({
         attributeId: item.attributeId,
         score: item.score,
         comment: item.comment || ''
       })),
-      totalScore, // Explicitly set
+      totalScore,
       remark: remark || ''
     });
 
@@ -270,20 +347,22 @@ export const createAttributeEvaluation = async (req: Request, res: Response): Pr
       .populate('attributes.attributeId', 'name description minScore maxScore')
       .lean();
     sendResponse(res, 201, true, 'Attribute evaluation created successfully', populated);
-  } catch (error) {
-    sendResponse(res, 500, false, `Server error creating evaluation: ${(error as Error).message}`, null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || `Server error creating evaluation`, null, error);
   }
 };
 
-export const updateAttributeEvaluation = async (req: Request, res: Response): Promise<void> => {
+// ─── UPDATE (full replace) ────────────────────────────────────────────────────
+
+export const updateAttributeEvaluation = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { studentId, teacherId, studentEnrollmentId, attributes, remark } = req.body;
+  const { studentId, studentEnrollmentId, attributes, remark } = req.body;
 
   if (!mongoose.isValidObjectId(id)) {
     sendResponse(res, 400, false, 'Invalid evaluation ID');
     return;
   }
-  if (!studentId && !teacherId && !studentEnrollmentId && !attributes && !remark) {
+  if (!studentId && !studentEnrollmentId && !attributes && !remark) {
     sendResponse(res, 400, false, 'At least one field required for update');
     return;
   }
@@ -293,6 +372,12 @@ export const updateAttributeEvaluation = async (req: Request, res: Response): Pr
     if (!evaluation) {
       sendResponse(res, 404, false, 'AttributeEvaluation not found');
       return;
+    }
+
+    // Access guard: homeroom teacher only
+    const user = req.user!
+    if (user.role === 'teacher') {
+      await assertTeacherCanWriteStudent(user.id, evaluation.studentId.toString())
     }
 
     // Validate inputs if provided
@@ -307,32 +392,21 @@ export const updateAttributeEvaluation = async (req: Request, res: Response): Pr
         return;
       }
     }
-    if (teacherId) {
-      if (!mongoose.isValidObjectId(teacherId)) {
-        sendResponse(res, 400, false, 'Invalid teacherId');
-        return;
-      }
-      const user = await UserAccount.findById(teacherId);
-      if (!user || !['admin', 'teacher'].includes(user.role)) {
-        sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role');
-        return;
-      }
-    }
     if (studentEnrollmentId) {
       if (!mongoose.isValidObjectId(studentEnrollmentId)) {
         sendResponse(res, 400, false, 'Invalid studentEnrollmentId');
         return;
       }
-      const enrollment = await StudentEnrollment.findById(studentEnrollmentId);
-      if (!enrollment || (studentId && enrollment.studentId.toString() !== studentId)) {
+      const enroll = await StudentEnrollment.findById(studentEnrollmentId);
+      if (!enroll || (studentId && enroll.studentId.toString() !== studentId)) {
         sendResponse(res, 400, false, 'Invalid studentEnrollmentId: Enrollment not found or does not match student');
         return;
       }
     }
     if (attributes) {
-      if (!Array.isArray(attributes) || attributes.length === 0 || !attributes.every((item: any) => 
-        item && 
-        mongoose.isValidObjectId(item.attributeId) && 
+      if (!Array.isArray(attributes) || attributes.length === 0 || !attributes.every((item: any) =>
+        item &&
+        mongoose.isValidObjectId(item.attributeId) &&
         typeof item.score === 'number' && item.score >= 1 && item.score <= 5 &&
         (item.comment === undefined || (typeof item.comment === 'string' && item.comment.length <= 200))
       )) {
@@ -353,7 +427,7 @@ export const updateAttributeEvaluation = async (req: Request, res: Response): Pr
     }
 
     // Check for duplicates if changing student or enrollment
-    if ((studentId && studentId !== evaluation.studentId.toString()) || 
+    if ((studentId && studentId !== evaluation.studentId.toString()) ||
         (studentEnrollmentId && studentEnrollmentId !== evaluation.studentEnrollmentId.toString())) {
       const existing = await AttributeEvaluation.findOne({
         studentId: studentId || evaluation.studentId,
@@ -367,7 +441,7 @@ export const updateAttributeEvaluation = async (req: Request, res: Response): Pr
 
     const updateData: any = {};
     if (studentId) updateData.studentId = studentId;
-    if (teacherId) updateData.teacherId = teacherId;
+    // teacherId is never changed via update; it stays from when it was created
     if (studentEnrollmentId) updateData.studentEnrollmentId = studentEnrollmentId;
     if (attributes) {
       updateData.attributes = attributes.map((item: any) => ({
@@ -386,13 +460,14 @@ export const updateAttributeEvaluation = async (req: Request, res: Response): Pr
       .populate('attributes.attributeId', 'name description minScore maxScore')
       .lean();
     sendResponse(res, 200, true, 'Attribute evaluation updated successfully', updated);
-  } catch (error) {
-    sendResponse(res, 500, false, `Server error updating evaluation: ${(error as Error).message}`, null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || `Server error updating evaluation`, null, error);
   }
 };
 
+// ─── PATCH (partial attribute update) ────────────────────────────────────────
 
-export const patchAttributeEvaluation = async (req: Request, res: Response): Promise<void> => {
+export const patchAttributeEvaluation = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const { attributes, remark } = req.body;
 
@@ -404,9 +479,9 @@ export const patchAttributeEvaluation = async (req: Request, res: Response): Pro
     sendResponse(res, 400, false, 'At least one field (attributes, remark) required for update');
     return;
   }
-  if (attributes && (!Array.isArray(attributes) || attributes.length === 0 || !attributes.every((item: any) => 
-    item && 
-    mongoose.isValidObjectId(item.attributeId) && 
+  if (attributes && (!Array.isArray(attributes) || attributes.length === 0 || !attributes.every((item: any) =>
+    item &&
+    mongoose.isValidObjectId(item.attributeId) &&
     (item.score === undefined || (typeof item.score === 'number' && item.score >= 1 && item.score <= 5)) &&
     (item.comment === undefined || (typeof item.comment === 'string' && item.comment.length <= 200))
   ))) {
@@ -423,6 +498,12 @@ export const patchAttributeEvaluation = async (req: Request, res: Response): Pro
     if (!evaluation) {
       sendResponse(res, 404, false, 'AttributeEvaluation not found');
       return;
+    }
+
+    // Access guard: homeroom teacher only
+    const user = req.user!
+    if (user.role === 'teacher') {
+      await assertTeacherCanWriteStudent(user.id, evaluation.studentId.toString())
     }
 
     // Validate attributeIds
@@ -466,12 +547,14 @@ export const patchAttributeEvaluation = async (req: Request, res: Response): Pro
       .populate('attributes.attributeId', 'name description minScore maxScore')
       .lean();
     sendResponse(res, 200, true, 'Attribute evaluation patched successfully', updated);
-  } catch (error) {
-    sendResponse(res, 500, false, `Server error patching evaluation: ${(error as Error).message}`, null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || `Server error patching evaluation`, null, error);
   }
 };
 
-export const deleteAttributeEvaluation = async (req: Request, res: Response): Promise<void> => {
+// ─── DELETE ───────────────────────────────────────────────────────────────────
+
+export const deleteAttributeEvaluation = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
@@ -487,7 +570,7 @@ export const deleteAttributeEvaluation = async (req: Request, res: Response): Pr
     }
 
     // Check for badge criteria dependencies
-    const dependentCriteria = await BadgeCriteria.findOne({ 
+    const dependentCriteria = await BadgeCriteria.findOne({
       $or: [
         { type: 'attributeScore', attributeCategoryId: { $in: evaluation.attributes.map(a => a.attributeId) } },
         { type: 'attributeEvaluationAverage', studentEnrollmentId: evaluation.studentEnrollmentId }

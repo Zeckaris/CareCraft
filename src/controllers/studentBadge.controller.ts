@@ -1,24 +1,57 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import mongoose from 'mongoose';
 import { StudentBadge } from '../models/studentBadge.model.js';
 import { BadgeDefinition } from '../models/badgeDefinition.model.js';
 import { Student } from '../models/student.model.js';
-import UserAccount  from '../models/userAccount.model.js';
+import UserAccount from '../models/userAccount.model.js';
 import { sendResponse } from '../utils/sendResponse.util.js';
+import { AuthRequest } from '../middlewares/auth.middleware.js';
+import {
+  resolveTeacherId,
+  assertTeacherCanWriteStudent,
+  assertTeacherCanReadStudent,
+  assertParentOwnsStudent,
+  getTeacherSectionIds,
+} from '../middlewares/access.middleware.js';
+import { StudentEnrollment } from '../models/studentEnrollment.model.js';
 
-export const getAllStudentBadges = async (req: Request, res: Response): Promise<void> => {
+// ─── helper ───────────────────────────────────────────────────────────────────
+
+async function buildStudentConstraint(req: AuthRequest): Promise<any> {
+  const user = req.user!
+  if (['admin', 'coordinator'].includes(user.role)) return {}
+
+  if (user.role === 'parent') {
+    const myStudent = await Student.findOne({ parentId: user.id }).select('_id').lean()
+    if (!myStudent) return { studentId: new mongoose.Types.ObjectId() }
+    return { studentId: myStudent._id }
+  }
+
+  if (user.role === 'teacher') {
+    const sectionIds = await getTeacherSectionIds(user.id)
+    const enrollments = await StudentEnrollment.find({
+      sectionId: { $in: sectionIds },
+      isActive: true,
+    }).select('studentId').lean()
+    const studentIds = enrollments.map(e => e.studentId)
+    return { studentId: { $in: studentIds } }
+  }
+
+  return { studentId: new mongoose.Types.ObjectId() }
+}
+
+// ─── GET ALL ──────────────────────────────────────────────────────────────────
+
+export const getAllStudentBadges = async (req: AuthRequest, res: Response): Promise<void> => {
   const { page = 1, limit = 10, studentId, badgeId, teacherId, criteriaMet } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
 
-  const filter: any = {};
+  const constraint = await buildStudentConstraint(req);
+  const filter: any = { ...constraint };
+
   if (studentId) {
     if (!mongoose.isValidObjectId(studentId)) {
       sendResponse(res, 400, false, 'Invalid studentId');
-      return;
-    }
-    const student = await Student.findById(studentId);
-    if (!student) {
-      sendResponse(res, 404, false, 'Student not found');
       return;
     }
     filter.studentId = studentId;
@@ -35,18 +68,22 @@ export const getAllStudentBadges = async (req: Request, res: Response): Promise<
     }
     filter.badgeId = badgeId;
   }
-  if (teacherId) {
+
+  // teacherId filter: only admin/coordinator may filter by arbitrary teacher
+  const user = req.user!
+  if (['admin', 'coordinator'].includes(user.role) && teacherId) {
     if (!mongoose.isValidObjectId(teacherId)) {
       sendResponse(res, 400, false, 'Invalid teacherId');
       return;
     }
-    const user = await UserAccount.findById(teacherId);
-    if (!user || !['admin', 'coordinator', 'teacher'].includes(user.role)) {
+    const userDoc = await UserAccount.findById(teacherId);
+    if (!userDoc || !['admin', 'coordinator', 'teacher'].includes(userDoc.role)) {
       sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role (admin, coordinator, teacher)');
       return;
     }
     filter.teacherId = teacherId;
   }
+
   if (criteriaMet !== undefined) {
     if (criteriaMet !== 'true' && criteriaMet !== 'false') {
       sendResponse(res, 400, false, 'Invalid criteriaMet: must be true or false');
@@ -76,7 +113,9 @@ export const getAllStudentBadges = async (req: Request, res: Response): Promise<
   }
 };
 
-export const getStudentBadgeById = async (req: Request, res: Response): Promise<void> => {
+// ─── GET BY ID ────────────────────────────────────────────────────────────────
+
+export const getStudentBadgeById = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
@@ -94,18 +133,32 @@ export const getStudentBadgeById = async (req: Request, res: Response): Promise<
       sendResponse(res, 404, false, 'StudentBadge not found');
       return;
     }
+
+    const user = req.user!
+    const studentId = (badge.studentId as any)?._id || badge.studentId
+    if (user.role === 'parent') {
+      await assertParentOwnsStudent(user.id, studentId)
+    } else if (user.role === 'teacher') {
+      await assertTeacherCanReadStudent(user.id, studentId)
+    }
+
     sendResponse(res, 200, true, 'Student badge fetched successfully', badge);
-  } catch (error) {
-    sendResponse(res, 500, false, `Server error fetching student badge: ${(error as Error).message}`, null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || `Server error fetching student badge`, null, error);
   }
 };
 
-export const createStudentBadge = async (req: Request, res: Response): Promise<void> => {
-  const { badgeId, studentId, teacherId, criteriaMet } = req.body;
+// ─── CREATE ───────────────────────────────────────────────────────────────────
+
+export const createStudentBadge = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { badgeId, studentId, criteriaMet } = req.body;
+
+  // teacherId always from the logged-in user
+  const effectiveTeacherId = resolveTeacherId(req);
 
   // Validate required fields
-  if (!badgeId || !studentId || !teacherId) {
-    sendResponse(res, 400, false, 'Missing required fields: badgeId, studentId, or teacherId');
+  if (!badgeId || !studentId) {
+    sendResponse(res, 400, false, 'Missing required fields: badgeId, studentId');
     return;
   }
   if (!mongoose.isValidObjectId(badgeId)) {
@@ -116,16 +169,18 @@ export const createStudentBadge = async (req: Request, res: Response): Promise<v
     sendResponse(res, 400, false, 'Invalid studentId');
     return;
   }
-  if (!mongoose.isValidObjectId(teacherId)) {
-    sendResponse(res, 400, false, 'Invalid teacherId');
-    return;
-  }
   if (criteriaMet !== undefined && typeof criteriaMet !== 'boolean') {
     sendResponse(res, 400, false, 'criteriaMet must be a boolean');
     return;
   }
 
   try {
+    // Access guard: homeroom teacher only
+    const user = req.user!
+    if (user.role === 'teacher') {
+      await assertTeacherCanWriteStudent(effectiveTeacherId, studentId)
+    }
+
     // Validate referenced documents
     const badgeDefinition = await BadgeDefinition.findById(badgeId);
     if (!badgeDefinition) {
@@ -137,8 +192,8 @@ export const createStudentBadge = async (req: Request, res: Response): Promise<v
       sendResponse(res, 404, false, 'Student not found');
       return;
     }
-    const user = await UserAccount.findById(teacherId);
-    if (!user || !['admin', 'coordinator', 'teacher'].includes(user.role)) {
+    const userDoc = await UserAccount.findById(effectiveTeacherId);
+    if (!userDoc || !['admin', 'coordinator', 'teacher'].includes(userDoc.role)) {
       sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role (admin, coordinator, teacher)');
       return;
     }
@@ -153,27 +208,29 @@ export const createStudentBadge = async (req: Request, res: Response): Promise<v
     const studentBadge = await StudentBadge.create({
       badgeId,
       studentId,
-      teacherId,
+      teacherId: effectiveTeacherId,
       criteriaMet: criteriaMet !== undefined ? criteriaMet : false
     });
 
     sendResponse(res, 201, true, 'Student badge created successfully', studentBadge);
-  } catch (error) {
-    sendResponse(res, 500, false, `Server error creating student badge: ${(error as Error).message}`, null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || `Server error creating student badge`, null, error);
   }
 };
 
-export const updateStudentBadge = async (req: Request, res: Response): Promise<void> => {
+// ─── UPDATE ───────────────────────────────────────────────────────────────────
+
+export const updateStudentBadge = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { badgeId, studentId, teacherId, criteriaMet } = req.body;
+  const { badgeId, studentId, criteriaMet } = req.body;
 
   // Validate inputs
   if (!mongoose.isValidObjectId(id)) {
     sendResponse(res, 400, false, 'Invalid student badge ID');
     return;
   }
-  if (!badgeId && !studentId && !teacherId && criteriaMet === undefined) {
-    sendResponse(res, 400, false, 'At least one field (badgeId, studentId, teacherId, criteriaMet) required');
+  if (!badgeId && !studentId && criteriaMet === undefined) {
+    sendResponse(res, 400, false, 'At least one field (badgeId, studentId, criteriaMet) required');
     return;
   }
   if (badgeId && !mongoose.isValidObjectId(badgeId)) {
@@ -182,10 +239,6 @@ export const updateStudentBadge = async (req: Request, res: Response): Promise<v
   }
   if (studentId && !mongoose.isValidObjectId(studentId)) {
     sendResponse(res, 400, false, 'Invalid studentId');
-    return;
-  }
-  if (teacherId && !mongoose.isValidObjectId(teacherId)) {
-    sendResponse(res, 400, false, 'Invalid teacherId');
     return;
   }
   if (criteriaMet !== undefined && typeof criteriaMet !== 'boolean') {
@@ -200,6 +253,12 @@ export const updateStudentBadge = async (req: Request, res: Response): Promise<v
       return;
     }
 
+    // Access guard: homeroom teacher only
+    const user = req.user!
+    if (user.role === 'teacher') {
+      await assertTeacherCanWriteStudent(user.id, studentBadge.studentId.toString())
+    }
+
     // Validate referenced documents
     if (badgeId) {
       const badgeDefinition = await BadgeDefinition.findById(badgeId);
@@ -212,13 +271,6 @@ export const updateStudentBadge = async (req: Request, res: Response): Promise<v
       const student = await Student.findById(studentId);
       if (!student) {
         sendResponse(res, 404, false, 'Student not found');
-        return;
-      }
-    }
-    if (teacherId) {
-      const user = await UserAccount.findById(teacherId);
-      if (!user || !['admin', 'coordinator', 'teacher'].includes(user.role)) {
-        sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role (admin, coordinator, teacher)');
         return;
       }
     }
@@ -238,7 +290,7 @@ export const updateStudentBadge = async (req: Request, res: Response): Promise<v
     const updateData: any = {};
     if (badgeId) updateData.badgeId = badgeId;
     if (studentId) updateData.studentId = studentId;
-    if (teacherId) updateData.teacherId = teacherId;
+    // teacherId is never changed via update
     if (criteriaMet !== undefined) updateData.criteriaMet = criteriaMet;
 
     const updated = await StudentBadge.findByIdAndUpdate(id, updateData, { new: true })
@@ -247,12 +299,14 @@ export const updateStudentBadge = async (req: Request, res: Response): Promise<v
       .populate('teacherId', 'firstName lastName email role')
       .lean();
     sendResponse(res, 200, true, 'Student badge updated successfully', updated);
-  } catch (error) {
-    sendResponse(res, 500, false, `Server error updating student badge: ${(error as Error).message}`, null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || `Server error updating student badge`, null, error);
   }
 };
 
-export const deleteStudentBadge = async (req: Request, res: Response): Promise<void> => {
+// ─── DELETE ───────────────────────────────────────────────────────────────────
+
+export const deleteStudentBadge = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {

@@ -1,28 +1,109 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { Observation } from '../models/observation.model.js';
 import { Student } from '../models/student.model.js';
-import UserAccount from '../models/userAccount.model.js'; 
+import UserAccount from '../models/userAccount.model.js';
 import mongoose from 'mongoose';
 import { StudentEnrollment } from '../models/studentEnrollment.model.js';
 import { AttributeCategory } from '../models/attributeCategory.model.js';
 import { sendResponse } from '../utils/sendResponse.util.js';
+import { AuthRequest } from '../middlewares/auth.middleware.js';
+import {
+  resolveTeacherId,
+  assertTeacherCanReadStudent,
+  assertParentOwnsStudent,
+  getTeacherSectionIds,
+} from '../middlewares/access.middleware.js';
 
-export const getAllObservations = async (req: Request, res: Response): Promise<void> => {
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Builds the studentId constraint for list queries based on the caller's role:
+ *   - admin/coordinator: no constraint (returns null)
+ *   - teacher: only students in sections they are assigned to
+ *   - parent: only their own child
+ * Returns null if there is no additional constraint.
+ */
+async function buildStudentConstraint(
+  req: AuthRequest
+): Promise<{ studentId?: any } | null> {
+  const user = req.user!
+  if (['admin', 'coordinator'].includes(user.role)) return null
+
+  if (user.role === 'parent') {
+    const myStudent = await Student.findOne({ parentId: user.id }).select('_id').lean()
+    if (!myStudent) return { studentId: null } // no student → return nothing
+    return { studentId: myStudent._id }
+  }
+
+  if (user.role === 'teacher') {
+    const sectionIds = await getTeacherSectionIds(user.id)
+    const enrollments = await StudentEnrollment.find({
+      sectionId: { $in: sectionIds },
+      isActive: true,
+    }).select('studentId').lean()
+    const studentIds = enrollments.map(e => e.studentId)
+    return { studentId: { $in: studentIds } }
+  }
+
+  return { studentId: null } // deny all
+}
+
+// ─── GET ALL ──────────────────────────────────────────────────────────────────
+
+export const getAllObservations = async (req: AuthRequest, res: Response): Promise<void> => {
   const { page = 1, limit = 10, studentId, teacherId, category } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
 
-  const filter: any = {};
-  if (studentId && mongoose.isValidObjectId(studentId)) filter.studentId = studentId;
-  if (teacherId && mongoose.isValidObjectId(teacherId)) filter.teacherId = teacherId;
-  if (category) {
-    if (!mongoose.isValidObjectId(category)) {
-      sendResponse(res, 400, false, 'Invalid category ID');
-      return;
-    }
-    filter.category = category;
-  }
-
   try {
+    const filter: any = {};
+
+    // Role-based scoping
+    const constraint = await buildStudentConstraint(req);
+    if (constraint) {
+      if (constraint.studentId === null) {
+        sendResponse(res, 403, false, 'No accessible students for your account');
+        return;
+      }
+      // Merge constraint into filter
+      if (studentId && mongoose.isValidObjectId(studentId)) {
+        // Caller specified a studentId — verify it's within their allowed set
+        const constraintStudentId = constraint.studentId;
+        if (constraintStudentId.$in) {
+          const allowed = constraintStudentId.$in.map((id: any) => id.toString());
+          if (!allowed.includes(studentId as string)) {
+            sendResponse(res, 403, false, 'Forbidden: Access denied for this student');
+            return;
+          }
+          filter.studentId = studentId;
+        } else {
+          // Parent case: single student
+          if (constraintStudentId.toString() !== studentId as string) {
+            sendResponse(res, 403, false, 'Forbidden: Access denied for this student');
+            return;
+          }
+          filter.studentId = studentId;
+        }
+      } else {
+        Object.assign(filter, constraint);
+      }
+    } else {
+      // admin/coordinator: apply optional filter
+      if (studentId && mongoose.isValidObjectId(studentId)) filter.studentId = studentId;
+    }
+
+    // Optional teacherId filter
+    if (teacherId && mongoose.isValidObjectId(teacherId)) {
+      filter.teacherId = teacherId;
+    }
+
+    if (category) {
+      if (!mongoose.isValidObjectId(category)) {
+        sendResponse(res, 400, false, 'Invalid category ID');
+        return;
+      }
+      filter.category = category;
+    }
+
     const observations = await Observation.find(filter)
       .populate('teacherId', 'firstName lastName')
       .populate('studentId', 'firstName lastName')
@@ -30,7 +111,7 @@ export const getAllObservations = async (req: Request, res: Response): Promise<v
       .sort({ date: -1 })
       .skip(skip)
       .limit(Number(limit));
-    
+
     const total = await Observation.countDocuments(filter);
 
     sendResponse(res, 200, true, 'Observations fetched successfully', observations, null, {
@@ -43,7 +124,9 @@ export const getAllObservations = async (req: Request, res: Response): Promise<v
   }
 };
 
-export const getObservationById = async (req: Request, res: Response): Promise<void> => {
+// ─── GET BY ID ────────────────────────────────────────────────────────────────
+
+export const getObservationById = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
@@ -56,25 +139,41 @@ export const getObservationById = async (req: Request, res: Response): Promise<v
       .populate('teacherId', 'firstName lastName')
       .populate('studentId', 'firstName lastName')
       .populate('category', 'name minScore maxScore');
-    
+
     if (!observation) {
       sendResponse(res, 404, false, 'Observation not found.');
       return;
     }
+
+    const user = req.user!
+    const studentId = (observation.studentId as any)?._id || observation.studentId
+
+    if (user.role === 'parent') {
+      await assertParentOwnsStudent(user.id, studentId)
+    } else if (user.role === 'teacher') {
+      await assertTeacherCanReadStudent(user.id, studentId)
+    }
+
     sendResponse(res, 200, true, 'Observation fetched successfully', observation);
-  } catch (error) {
-    sendResponse(res, 500, false, 'Server error fetching observation.', null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || 'Server error fetching observation.');
   }
 };
 
-export const createObservation = async (req: Request, res: Response): Promise<void> => {
-  const { studentId, teacherId, date, category, description, score } = req.body;
+// ─── CREATE ───────────────────────────────────────────────────────────────────
 
-  if (!mongoose.isValidObjectId(studentId) || !mongoose.isValidObjectId(teacherId)) {
-    sendResponse(res, 400, false, 'Invalid studentId or teacherId');
+export const createObservation = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { studentId, date, category, description, score } = req.body;
+
+  if (!studentId) {
+    sendResponse(res, 400, false, 'Missing required field: studentId');
     return;
   }
-  if (!date || !category || !description || !score) {
+  if (!mongoose.isValidObjectId(studentId)) {
+    sendResponse(res, 400, false, 'Invalid studentId');
+    return;
+  }
+  if (!date || !category || !description || score === undefined) {
     sendResponse(res, 400, false, 'Missing required fields: date, category, description, or score');
     return;
   }
@@ -83,7 +182,16 @@ export const createObservation = async (req: Request, res: Response): Promise<vo
     return;
   }
 
+  // teacherId always comes from the logged-in user (unless admin/coordinator passes an override)
+  const effectiveTeacherId = resolveTeacherId(req);
+
   try {
+    // Access guard: teacher must be assigned to this student's section
+    const user = req.user!
+    if (user.role === 'teacher') {
+      await assertTeacherCanReadStudent(effectiveTeacherId, studentId)
+    }
+
     const attributeCategory = await AttributeCategory.findById(category);
     if (!attributeCategory) {
       sendResponse(res, 404, false, 'AttributeCategory not found');
@@ -98,34 +206,30 @@ export const createObservation = async (req: Request, res: Response): Promise<vo
       sendResponse(res, 404, false, 'Student not found.');
       return;
     }
-    const teacher = await UserAccount.findOne({ _id: teacherId, role: 'teacher' });
-    if (!teacher) {
-      sendResponse(res, 404, false, 'Teacher not found or invalid role.');
-      return;
-    }
 
-    const observation = await Observation.create({ 
-      studentId, 
-      teacherId, 
-      date: new Date(date), 
-      category, 
+    const observation = await Observation.create({
+      studentId,
+      teacherId: effectiveTeacherId,
+      date: new Date(date),
+      category,
       description,
       score
     });
 
-    // Populate the created observation for response
     const populatedObservation = await Observation.findById(observation._id)
       .populate('teacherId', 'firstName lastName')
       .populate('studentId', 'firstName lastName')
       .populate('category', 'name minScore maxScore');
 
     sendResponse(res, 201, true, 'Observation created successfully.', populatedObservation);
-  } catch (error) {
-    sendResponse(res, 500, false, 'Server error creating observation.', null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || 'Server error creating observation.');
   }
 };
 
-export const updateObservation = async (req: Request, res: Response): Promise<void> => {
+// ─── UPDATE ───────────────────────────────────────────────────────────────────
+
+export const updateObservation = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const { date, category, description, score } = req.body;
 
@@ -145,18 +249,27 @@ export const updateObservation = async (req: Request, res: Response): Promise<vo
   }
 
   try {
+    const observation = await Observation.findById(id);
+    if (!observation) {
+      sendResponse(res, 404, false, 'Observation not found.');
+      return;
+    }
+
+    const user = req.user!
+    // Subject teachers can only edit their own observations
+    if (user.role === 'teacher') {
+      if (observation.teacherId.toString() !== user.id.toString()) {
+        sendResponse(res, 403, false, 'Forbidden: You can only edit your own observations');
+        return;
+      }
+    }
+
     if (category) {
       const attributeCategory = await AttributeCategory.findById(category);
       if (!attributeCategory) {
         sendResponse(res, 404, false, 'AttributeCategory not found');
         return;
       }
-    }
-
-    const observation = await Observation.findById(id);
-    if (!observation) {
-      sendResponse(res, 404, false, 'Observation not found.');
-      return;
     }
 
     // Validate score against current category if score is being updated
@@ -181,12 +294,14 @@ export const updateObservation = async (req: Request, res: Response): Promise<vo
       .populate('category', 'name minScore maxScore');
 
     sendResponse(res, 200, true, 'Observation updated successfully.', updated);
-  } catch (error) {
-    sendResponse(res, 500, false, 'Server error updating observation.', null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || 'Server error updating observation.');
   }
 };
 
-export const deleteObservation = async (req: Request, res: Response): Promise<void> => {
+// ─── DELETE ───────────────────────────────────────────────────────────────────
+
+export const deleteObservation = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
@@ -201,14 +316,25 @@ export const deleteObservation = async (req: Request, res: Response): Promise<vo
       return;
     }
 
+    const user = req.user!
+    // Subject teachers can only delete their own observations
+    if (user.role === 'teacher') {
+      if (observation.teacherId.toString() !== user.id.toString()) {
+        sendResponse(res, 403, false, 'Forbidden: You can only delete your own observations');
+        return;
+      }
+    }
+
     await Observation.findByIdAndDelete(id);
     sendResponse(res, 200, true, 'Observation deleted successfully.');
-  } catch (error) {
-    sendResponse(res, 500, false, 'Server error deleting observation.', null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || 'Server error deleting observation.');
   }
 };
 
-export const getObservationsByStudentAndDate = async (req: Request, res: Response): Promise<void> => {
+// ─── GET BY STUDENT + DATE ────────────────────────────────────────────────────
+
+export const getObservationsByStudentAndDate = async (req: AuthRequest, res: Response): Promise<void> => {
   const { studentId } = req.params;
   const { startDate, endDate, category } = req.query;
 
@@ -220,43 +346,59 @@ export const getObservationsByStudentAndDate = async (req: Request, res: Respons
     sendResponse(res, 400, false, 'Missing required fields: startDate or endDate');
     return;
   }
-  
-  const filter: any = {
-    studentId, 
-    date: {
-      $gte: new Date(startDate as string),
-      $lt: new Date(endDate as string)
-    }
-  };
-
-  if (category) {
-    if (!mongoose.isValidObjectId(category)) {
-      sendResponse(res, 400, false, 'Invalid category ID');
-      return;
-    }
-    filter.category = category;
-  }
 
   try {
+    const user = req.user!
+    if (user.role === 'parent') {
+      await assertParentOwnsStudent(user.id, studentId)
+    } else if (user.role === 'teacher') {
+      await assertTeacherCanReadStudent(user.id, studentId)
+    }
+
+    const filter: any = {
+      studentId,
+      date: {
+        $gte: new Date(startDate as string),
+        $lt: new Date(endDate as string)
+      }
+    };
+
+    if (category) {
+      if (!mongoose.isValidObjectId(category)) {
+        sendResponse(res, 400, false, 'Invalid category ID');
+        return;
+      }
+      filter.category = category;
+    }
+
     const observations = await Observation.find(filter)
       .populate('teacherId', 'firstName lastName')
       .populate('studentId', 'firstName lastName')
       .populate('category', 'name minScore maxScore')
       .sort({ date: -1 });
-    
+
     sendResponse(res, 200, true, 'Observations fetched successfully', observations);
-  } catch (error) {
-    sendResponse(res, 500, false, 'Server error fetching observations', null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || 'Server error fetching observations');
   }
 };
 
-export const getObservationsByTeacher = async (req: Request, res: Response): Promise<void> => {
+// ─── GET BY TEACHER ───────────────────────────────────────────────────────────
+
+export const getObservationsByTeacher = async (req: AuthRequest, res: Response): Promise<void> => {
   const { teacherId } = req.params;
   const { page = 1, limit = 10, category } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
 
   if (!mongoose.isValidObjectId(teacherId)) {
     sendResponse(res, 400, false, 'Invalid teacherId');
+    return;
+  }
+
+  // Teachers may only query their own observations
+  const user = req.user!
+  if (user.role === 'teacher' && teacherId !== user.id.toString()) {
+    sendResponse(res, 403, false, 'Forbidden: You can only view your own observations');
     return;
   }
 
@@ -277,7 +419,7 @@ export const getObservationsByTeacher = async (req: Request, res: Response): Pro
       .sort({ date: -1 })
       .skip(skip)
       .limit(Number(limit));
-    
+
     const total = await Observation.countDocuments(filter);
 
     sendResponse(res, 200, true, 'Teacher observations fetched successfully', observations, null, {
@@ -290,7 +432,9 @@ export const getObservationsByTeacher = async (req: Request, res: Response): Pro
   }
 };
 
-export const bulkDeleteObservationsByStudent = async (req: Request, res: Response): Promise<void> => {
+// ─── BULK DELETE ──────────────────────────────────────────────────────────────
+
+export const bulkDeleteObservationsByStudent = async (req: AuthRequest, res: Response): Promise<void> => {
   const { studentId } = req.params;
 
   if (!mongoose.isValidObjectId(studentId)) {
@@ -312,13 +456,22 @@ export const bulkDeleteObservationsByStudent = async (req: Request, res: Respons
   }
 };
 
-export const getObservationsByTeacherAndGrade = async (req: Request, res: Response): Promise<void> => {
+// ─── GET BY TEACHER + GRADE ────────────────────────────────────────────────────
+
+export const getObservationsByTeacherAndGrade = async (req: AuthRequest, res: Response): Promise<void> => {
   const { teacherId, gradeId } = req.params;
   const { page = 1, limit = 10, category } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
 
   if (!mongoose.isValidObjectId(teacherId) || !mongoose.isValidObjectId(gradeId)) {
     sendResponse(res, 400, false, 'Invalid teacherId or gradeId');
+    return;
+  }
+
+  // Teachers may only query their own observations
+  const user = req.user!
+  if (user.role === 'teacher' && teacherId !== user.id.toString()) {
+    sendResponse(res, 403, false, 'Forbidden: You can only view your own observations');
     return;
   }
 
@@ -329,7 +482,14 @@ export const getObservationsByTeacherAndGrade = async (req: Request, res: Respon
       return;
     }
 
-    const enrollments = await StudentEnrollment.find({ gradeId, isActive: true }).select('studentId');
+    // For teacher role: scope to their assigned sections only
+    let enrollmentFilter: any = { gradeId, isActive: true };
+    if (user.role === 'teacher') {
+      const sectionIds = await getTeacherSectionIds(user.id);
+      enrollmentFilter.sectionId = { $in: sectionIds };
+    }
+
+    const enrollments = await StudentEnrollment.find(enrollmentFilter).select('studentId');
     const studentIds = enrollments.map(enrollment => enrollment.studentId);
 
     if (!studentIds.length) {
@@ -357,7 +517,7 @@ export const getObservationsByTeacherAndGrade = async (req: Request, res: Respon
       .sort({ date: -1 })
       .skip(skip)
       .limit(Number(limit));
-    
+
     const total = await Observation.countDocuments(filter);
 
     sendResponse(res, 200, true, 'Observations fetched successfully', observations, null, {
@@ -370,17 +530,16 @@ export const getObservationsByTeacherAndGrade = async (req: Request, res: Respon
   }
 };
 
-export const getObservationsByCategoryAndGrade = async (req: Request, res: Response): Promise<void> => {
+// ─── GET BY CATEGORY + GRADE ──────────────────────────────────────────────────
+
+export const getObservationsByCategoryAndGrade = async (req: AuthRequest, res: Response): Promise<void> => {
   const { gradeId } = req.params;
   const { category, page = 1, limit = 10 } = req.query;
-  const teacherId = (req as any).user?._id;
+  const user = req.user!
+  const teacherId = user.id;
 
   if (!mongoose.isValidObjectId(gradeId)) {
     sendResponse(res, 400, false, 'Invalid gradeId');
-    return;
-  }
-  if (!mongoose.isValidObjectId(teacherId)) {
-    sendResponse(res, 400, false, 'Invalid teacherId from token');
     return;
   }
   if (!category) {
@@ -399,13 +558,14 @@ export const getObservationsByCategoryAndGrade = async (req: Request, res: Respo
       return;
     }
 
-    const teacher = await UserAccount.findOne({ _id: teacherId, role: 'teacher' });
-    if (!teacher) {
-      sendResponse(res, 404, false, 'Teacher not found or invalid role.');
-      return;
+    // Scope enrollment query to teacher's assigned sections
+    let enrollmentFilter: any = { gradeId, isActive: true };
+    if (user.role === 'teacher') {
+      const sectionIds = await getTeacherSectionIds(user.id);
+      enrollmentFilter.sectionId = { $in: sectionIds };
     }
 
-    const enrollments = await StudentEnrollment.find({ gradeId, isActive: true }).select('studentId');
+    const enrollments = await StudentEnrollment.find(enrollmentFilter).select('studentId');
     const studentIds = enrollments.map(enrollment => enrollment.studentId);
 
     if (!studentIds.length) {
@@ -427,7 +587,7 @@ export const getObservationsByCategoryAndGrade = async (req: Request, res: Respo
       .sort({ date: -1 })
       .skip(skip)
       .limit(Number(limit));
-    
+
     const total = await Observation.countDocuments(filter);
 
     sendResponse(res, 200, true, 'Observations fetched successfully', observations, null, {

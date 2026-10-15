@@ -26,13 +26,23 @@ router.post(
 
 router.post('/batch', authMiddleware, roleMiddleware('admin', 'coordinator'), batchCreateStudents);
 
-router.get('/', authMiddleware, async (req, res) => {
-  if (req.query.gradeId) {
-    return getStudentsByGrade(req, res);
+router.get(
+  '/',
+  authMiddleware,
+  roleMiddleware('admin', 'coordinator', 'teacher', 'parent'),
+  async (req, res) => {
+    if (req.query.gradeId) {
+      return getStudentsByGrade(req, res);
+    }
+    return getAllStudents(req, res);
   }
-  return getAllStudents(req, res);
-});
-router.get('/:id', authMiddleware, getStudentById)
+);
+router.get(
+  '/:id',
+  authMiddleware,
+  roleMiddleware('admin', 'coordinator', 'teacher', 'parent'),
+  getStudentById
+);
 
 router.put(
   '/:id',
