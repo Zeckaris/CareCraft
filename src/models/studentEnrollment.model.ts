@@ -5,13 +5,27 @@ const studentEnrollmentSchema = new Schema<IStudentEnrollment>(
   {
     studentId: { type: Schema.Types.ObjectId, ref: 'Student', required: true },
     gradeId: { type: Schema.Types.ObjectId, ref: 'Grade', required: true },
+    sectionId: { type: Schema.Types.ObjectId, ref: 'Section', default: null },
     schoolYear: { type: String, required: true, trim: true },
     isActive: { type: Boolean, default: true }
   },
   {
-    timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' }
+    timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
   }
 )
+
+// Additive virtual field: sectionName
+studentEnrollmentSchema.virtual('sectionName').get(function (this: any) {
+  if (this.sectionId && typeof this.sectionId === 'object' && 'name' in this.sectionId) {
+    return this.sectionId.name
+  }
+  return undefined
+})
+
+// Index for fast "all enrollments in a section" queries
+studentEnrollmentSchema.index({ sectionId: 1, isActive: 1 })
 
 export const StudentEnrollment = model<IStudentEnrollment>(
   'StudentEnrollment',
