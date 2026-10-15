@@ -3,6 +3,7 @@ import { Grade } from '../../models/grade.model.js'
 import { sendResponse } from '../../utils/sendResponse.util.js'
 import { Types } from "mongoose"
 import { StudentEnrollment } from '../../models/studentEnrollment.model.js'
+import { Section } from '../../models/section.model.js'
 
 
 export const createGrade= async (req:Request, res:Response):Promise<void> =>{
@@ -105,33 +106,47 @@ export const updateGrade = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
-export const deleteGrade= async (req:Request, res:Response):Promise<void> =>{
-    const {id}= req.params
-    if (!id){
-        sendResponse(res, 400, false, "Missing required field")
-        return
+export const deleteGrade = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params
+  if (!id || !Types.ObjectId.isValid(id)) {
+    sendResponse(res, 400, false, 'Valid grade ID required')
+    return
+  }
+
+  try {
+    const grade = await Grade.findById(id)
+    if (!grade) {
+      sendResponse(res, 404, false, 'Grade not found')
+      return
     }
 
-    try{
-        const grade= await Grade.findByIdAndDelete(id)
-        if (!grade){
-            sendResponse(res, 404, false, "Grade not found")
-            return
-        }
-        const enrollmentCount = await StudentEnrollment.countDocuments({ gradeId: id });
-        if (enrollmentCount > 0) {
-        sendResponse(
-            res,
-            400,
-            false,
-            `Cannot delete "${grade.level}" — ${enrollmentCount} enrollment(s) linked. Remove them first.`
-        );
-        return;
-        }
-        sendResponse(res, 200, true, "Grade deleted successfully")
-        return
-    }catch(error){
-        sendResponse(res, 500, false, "Internal server error", null, error)
-        return      
+    const enrollmentCount = await StudentEnrollment.countDocuments({ gradeId: id })
+    if (enrollmentCount > 0) {
+      sendResponse(
+        res,
+        400,
+        false,
+        `Cannot delete "${grade.level}" — ${enrollmentCount} enrollment(s) linked. Remove them first.`
+      )
+      return
     }
-}
+
+    const sectionCount = await Section.countDocuments({ gradeId: id })
+    if (sectionCount > 0) {
+      sendResponse(
+        res,
+        400,
+        false,
+        `Cannot delete "${grade.level}" — ${sectionCount} section(s) exist for this grade. Remove them first.`
+      )
+      return
+    }
+
+    await Grade.findByIdAndDelete(id)
+    sendResponse(res, 200, true, 'Grade deleted successfully')
+    return
+  } catch (error) {
+    sendResponse(res, 500, false, 'Internal server error', null, error)
+    return
+  }
+}
