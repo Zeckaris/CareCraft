@@ -60,11 +60,13 @@ export const createSection = async (req: Request, res: Response): Promise<void> 
       return
     }
 
+    const canonicalYear = normalizeYear(schoolYear as string)
     const normName = (name as string).trim().toUpperCase()
 
+    // Reject if the same section already exists under either year variant.
     const existing = await Section.findOne({
       gradeId,
-      schoolYear,
+      schoolYear: { $in: getYearVariants(canonicalYear) },
       name: normName,
     })
     if (existing) {
@@ -203,7 +205,7 @@ export const updateSection = async (req: Request, res: Response): Promise<void> 
       }
     }
 
-    if (schoolYear && schoolYear !== section.schoolYear) {
+    if (schoolYear && !yearsMatch(schoolYear, section.schoolYear)) {
       if (!(await isValidSchoolYear(schoolYear))) {
         sendResponse(res, 400, false, `schoolYear "${schoolYear}" does not match any academic calendar`)
         return
@@ -211,18 +213,20 @@ export const updateSection = async (req: Request, res: Response): Promise<void> 
     }
 
     const resolvedGradeId = gradeId || section.gradeId.toString()
-    const resolvedSchoolYear = schoolYear || section.schoolYear
+    const resolvedSchoolYear = schoolYear
+      ? normalizeYear(schoolYear as string)
+      : section.schoolYear
     const resolvedName = name ? (name as string).trim().toUpperCase() : section.name
 
-    // Check uniqueness if name/grade/year changed
+    // Check uniqueness if name/grade/year changed (across both year variants)
     if (
       resolvedName !== section.name ||
       resolvedGradeId !== section.gradeId.toString() ||
-      resolvedSchoolYear !== section.schoolYear
+      !yearsMatch(resolvedSchoolYear, section.schoolYear)
     ) {
       const dup = await Section.findOne({
         gradeId: resolvedGradeId,
-        schoolYear: resolvedSchoolYear,
+        schoolYear: { $in: getYearVariants(resolvedSchoolYear) },
         name: resolvedName,
         _id: { $ne: id },
       })
@@ -239,7 +243,7 @@ export const updateSection = async (req: Request, res: Response): Promise<void> 
 
     section.name = resolvedName
     if (gradeId) section.gradeId = new mongoose.Types.ObjectId(gradeId)
-    if (schoolYear) section.schoolYear = schoolYear
+    if (schoolYear) section.schoolYear = resolvedSchoolYear
     if (isActive !== undefined) section.isActive = isActive
 
     await section.save()

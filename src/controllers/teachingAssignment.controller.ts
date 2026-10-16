@@ -6,6 +6,7 @@ import { GradeSubjectAssessment } from '../models/gradeSubjectAssessment.model.j
 import UserAccount from '../models/userAccount.model.js'
 import { Subject } from '../models/subject.model.js'
 import { sendResponse } from '../utils/sendResponse.util.js'
+import { getYearVariants, normalizeYear } from '../utils/yearNormalizer.js'
 
 // ─── CREATE ───────────────────────────────────────────────────────────────────
 
@@ -110,7 +111,7 @@ export const createTeachingAssignment = async (req: Request, res: Response): Pro
       teacherId,
       role,
       subjectId: role === 'subject' ? subjectId : null,
-      schoolYear: section.schoolYear,
+      schoolYear: normalizeYear(section.schoolYear),
     })
 
     const populated = await TeachingAssignment.findById(assignment._id)
@@ -160,7 +161,7 @@ export const getAllTeachingAssignments = async (req: Request, res: Response): Pr
     if (!['homeroom', 'subject'].includes(role as string)) { sendResponse(res, 400, false, 'Invalid role'); return }
     filter.role = role
   }
-  if (schoolYear) filter.schoolYear = schoolYear
+  if (schoolYear) filter.schoolYear = { $in: getYearVariants(schoolYear as string) }
 
   try {
     const total = await TeachingAssignment.countDocuments(filter)

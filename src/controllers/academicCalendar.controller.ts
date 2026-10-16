@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { AcademicCalendar } from '../models/academicCalendar.model.js';
 import { sendResponse } from '../utils/sendResponse.util.js';
+import { getYearVariants, normalizeYear } from '../utils/yearNormalizer.js';
 
 export const getAllCalendars = async (req: Request, res: Response) => {
   try {
@@ -49,11 +50,15 @@ export const createCalendar = async (req: Request, res: Response) => {
     if (!academicYear || !startDate || !endDate)
       return sendResponse(res, 400, false, "Missing required fields");
 
-    const exists = await AcademicCalendar.findOne({ academicYear });
+    const canonicalYear = normalizeYear(academicYear);
+
+    const exists = await AcademicCalendar.findOne({
+      academicYear: { $in: getYearVariants(canonicalYear) },
+    });
     if (exists) return sendResponse(res, 400, false, "Academic year already exists");
 
     const calendar = await AcademicCalendar.create({ 
-      academicYear, 
+      academicYear: canonicalYear, 
       startDate, 
       endDate,
       registrationStartDate,
@@ -72,9 +77,12 @@ export const createCalendar = async (req: Request, res: Response) => {
 
 export const updateCalendar = async (req: Request, res: Response) => {
   try {
+    const update: any = { ...req.body };
+    if (update.academicYear) update.academicYear = normalizeYear(update.academicYear);
+
     const calendar = await AcademicCalendar.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      update,
       { new: true, runValidators: true }
     );
     if (!calendar) return sendResponse(res, 404, false, "Calendar not found");
