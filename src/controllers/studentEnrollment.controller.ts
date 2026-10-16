@@ -11,6 +11,7 @@ import {
   assertParentOwnsStudent,
   getTeacherSectionIds,
 } from '../middlewares/access.middleware.js';
+import { yearsMatch, getYearVariants, normalizeYear } from '../utils/yearNormalizer.js';
 
 const getCurrentActiveCalendar = async () => {
   return await AcademicCalendar.findOne({ isCurrent: true });
@@ -50,7 +51,7 @@ export const resolveSectionForEnrollment = async (
     if (section.gradeId.toString() !== gradeId.toString()) {
       return { error: 'Section does not belong to the selected grade' };
     }
-    if (section.schoolYear !== schoolYear) {
+    if (!yearsMatch(section.schoolYear, schoolYear)) {
       return { error: `Section belongs to school year ${section.schoolYear}, but enrollment is for ${schoolYear}` };
     }
     if (!section.isActive) {
@@ -60,7 +61,11 @@ export const resolveSectionForEnrollment = async (
   }
 
   // Auto-assign logic when sectionId is omitted
-  const activeSections = await Section.find({ gradeId, schoolYear, isActive: true });
+  const activeSections = await Section.find({
+    gradeId,
+    schoolYear: { $in: getYearVariants(schoolYear) },
+    isActive: true,
+  });
   if (activeSections.length === 1) {
     return { sectionId: activeSections[0]._id };
   } else if (activeSections.length > 1) {
@@ -81,7 +86,7 @@ export const getAllEnrollments = async (req: AuthRequest, res: Response): Promis
 
   const filter: any = {};
   if (gradeId) filter.gradeId = gradeId;
-  if (schoolYear) filter.schoolYear = schoolYear;
+  if (schoolYear) filter.schoolYear = { $in: getYearVariants(schoolYear as string) };
   if (isActive !== undefined) filter.isActive = isActive === 'true';
 
   const targetSectionId = sectionId || section;
@@ -191,7 +196,7 @@ export const getStudentEnrollments = async (req: AuthRequest, res: Response): Pr
   }
 
   const filter: any = { studentId };
-  if (schoolYear) filter.schoolYear = schoolYear;
+  if (schoolYear) filter.schoolYear = { $in: getYearVariants(schoolYear as string) };
   if (isActive !== undefined) filter.isActive = isActive === 'true';
 
   const targetSectionId = sectionId || section;
@@ -266,7 +271,7 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    const schoolYear = currentCalendar.academicYear;
+    const schoolYear = normalizeYear(currentCalendar.academicYear);
 
     const today = new Date();
     const regStart = currentCalendar.registrationStartDate;
@@ -287,7 +292,11 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    const existing = await StudentEnrollment.findOne({ studentId, schoolYear, isActive: true });
+    const existing = await StudentEnrollment.findOne({
+      studentId,
+      schoolYear: { $in: getYearVariants(schoolYear) },
+      isActive: true,
+    });
     if (existing) {
       sendResponse(res, 400, false, `Student already has active enrollment for ${schoolYear}`);
       return;
@@ -358,11 +367,13 @@ export const updateEnrollment = async (req: Request, res: Response): Promise<voi
     }
 
     const targetGradeId = gradeId || enrollment.gradeId;
-    const targetSchoolYear = providedYear || enrollment.schoolYear;
+    const targetSchoolYear = providedYear
+      ? normalizeYear(providedYear)
+      : enrollment.schoolYear;
 
     const updateData: any = {};
     if (gradeId) updateData.gradeId = gradeId;
-    if (providedYear) updateData.schoolYear = providedYear;
+    if (providedYear) updateData.schoolYear = targetSchoolYear;
     if (isActive !== undefined) updateData.isActive = isActive;
 
     if (sectionId !== undefined) {
@@ -471,7 +482,7 @@ export const getGradeEnrollments = async (req: AuthRequest, res: Response): Prom
   }
 
   const filter: any = { gradeId, isActive: isActive === 'true' };
-  if (schoolYear) filter.schoolYear = schoolYear;
+  if (schoolYear) filter.schoolYear = { $in: getYearVariants(schoolYear as string) };
 
   const targetSectionId = sectionId || section;
   if (user?.role === 'teacher') {
@@ -531,7 +542,7 @@ export const bulkCreateEnrollments = async (req: Request, res: Response): Promis
       return;
     }
 
-    const schoolYear = currentCalendar.academicYear;
+    const schoolYear = normalizeYear(currentCalendar.academicYear);
 
     const today = new Date();
     const regStart = currentCalendar.registrationStartDate;
@@ -571,7 +582,11 @@ export const bulkCreateEnrollments = async (req: Request, res: Response): Promis
       const batch = validStudentIds.slice(i, i + 50);
       const batchPromises = batch.map(async (studentId: string) => {
         try {
-          const existing = await StudentEnrollment.findOne({ studentId, schoolYear, isActive: true });
+          const existing = await StudentEnrollment.findOne({
+            studentId,
+            schoolYear: { $in: getYearVariants(schoolYear) },
+            isActive: true,
+          });
           if (existing) {
             errors.push(`Student ${studentId} already enrolled`);
             return null;
@@ -647,7 +662,7 @@ export const moveEnrollmentSection = async (req: Request, res: Response): Promis
       sendResponse(res, 400, false, 'Target section belongs to a different grade. Student can only be moved within the same grade and school year.');
       return;
     }
-    if (targetSection.schoolYear !== enrollment.schoolYear) {
+    if (!yearsMatch(targetSection.schoolYear, enrollment.schoolYear)) {
       sendResponse(res, 400, false, 'Target section belongs to a different school year. Student can only be moved within the same grade and school year.');
       return;
     }
@@ -711,7 +726,7 @@ export const bulkMoveEnrollmentSections = async (req: Request, res: Response): P
         errors.push(`Enrollment ${eid} belongs to a different grade`);
         continue;
       }
-      if (enrollment.schoolYear !== targetSection.schoolYear) {
+      if (!yearsMatch(enrollment.schoolYear, targetSection.schoolYear)) {
         errors.push(`Enrollment ${eid} belongs to a different school year`);
         continue;
       }
@@ -728,5 +743,40 @@ export const bulkMoveEnrollmentSections = async (req: Request, res: Response): P
     });
   } catch (error) {
     sendResponse(res, 500, false, 'Server error in bulk section move', null, error);
+  }
+};
+
+/**
+ * List active enrollments of a grade (and optionally school year) that have no
+ * section assigned yet.
+ * GET /api/enrollment/unassigned?gradeId=&schoolYear=
+ */
+export const getUnassignedEnrollments = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { gradeId, schoolYear } = req.query;
+
+  if (!gradeId || !mongoose.isValidObjectId(gradeId)) {
+    sendResponse(res, 400, false, 'Valid gradeId is required');
+    return;
+  }
+
+  const filter: any = {
+    gradeId,
+    isActive: true,
+    $or: [{ sectionId: null }, { sectionId: { $exists: false } }],
+  };
+  if (schoolYear) filter.schoolYear = { $in: getYearVariants(schoolYear as string) };
+
+  try {
+    const enrollments = await StudentEnrollment.find(filter)
+      .populate('studentId', 'firstName middleName lastName profileImage gender')
+      .populate('gradeId', 'level')
+      .sort({ createdAt: -1 });
+
+    sendResponse(res, 200, true, 'Unassigned enrollments fetched successfully', {
+      enrollments,
+      count: enrollments.length,
+    });
+  } catch (error) {
+    sendResponse(res, 500, false, 'Server error fetching unassigned enrollments.', null, error);
   }
 };

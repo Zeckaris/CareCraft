@@ -7,6 +7,7 @@ import {
   deleteSection,
   getSectionRoster,
   getMySections,
+  generateSections,
 } from '../controllers/section.controller.js'
 import { authMiddleware } from '../middlewares/auth.middleware.js'
 import { roleMiddleware } from '../middlewares/role.middleware.js'
@@ -25,6 +26,7 @@ router.get('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teach
 
 // ── Write (admin + coordinator) ──────────────────────────────────────────────
 router.post('/', authMiddleware, roleMiddleware('admin', 'coordinator'), createSection)
+router.post('/generate', authMiddleware, roleMiddleware('admin', 'coordinator'), generateSections)
 router.put('/:id', authMiddleware, roleMiddleware('admin', 'coordinator'), updateSection)
 
 // ── Delete (admin + coordinator) ─────────────────────────────────────────────
