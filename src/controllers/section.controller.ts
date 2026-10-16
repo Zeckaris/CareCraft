@@ -347,10 +347,11 @@ export const getMySections = async (req: Request, res: Response): Promise<void> 
   }
 
   try {
-    // Use active calendar year; fall back to all years if none found
+    // Use active calendar year; fall back to all years if none found.
+    // Use getYearVariants so "2024-2025" matches sections stored as "2024-25".
     const activeCal = await AcademicCalendar.findOne({ isCurrent: true })
     const schoolYearFilter: any = {}
-    if (activeCal) schoolYearFilter.schoolYear = activeCal.academicYear
+    if (activeCal) schoolYearFilter.schoolYear = { $in: getYearVariants(activeCal.academicYear) }
 
     const assignments = await TeachingAssignment.find({
       teacherId,

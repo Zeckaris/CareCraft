@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import UserAccount from '../../models/userAccount.model.js';
+import { TeachingAssignment } from '../../models/teachingAssignment.model.js';
 import { sendResponse } from '../../utils/sendResponse.util.js';
 import { IUserAccount } from '../../types/userAccount.type.js';
 
@@ -9,21 +10,33 @@ interface AuthRequest extends Request {
 
 export const getAllTeachers = async (req: AuthRequest, res: Response) => {
   try {
-    const page = parseInt(req.query.page as string) || 1; // <-- default page = 1
-    const limit = 10;
-    const skip = (page - 1) * limit;
+    const page = parseInt(req.query.page as string) || 1;
+    // Allow caller to override limit (max 200) or pass limit=0 to fetch all.
+    const rawLimit = parseInt(req.query.limit as string);
+    const fetchAll = rawLimit === 0;
+    const limit = fetchAll ? 0 : Math.min(isNaN(rawLimit) ? 10 : rawLimit, 200);
+    const skip = fetchAll ? 0 : (page - 1) * limit;
 
-    const total = await UserAccount.countDocuments({ role: 'teacher' });
+    // By default exclude suspended teachers (assignment-picker use-case).
+    // Pass includeSuspended=true to see all.
+    const includeSuspended = req.query.includeSuspended === 'true';
+    const filter: Record<string, any> = { role: 'teacher' };
+    if (!includeSuspended) filter.isSuspended = { $ne: true };
 
-    const teachers = await UserAccount.find({ role: 'teacher' }).select('firstName lastName email phoneNumber lastLogin createdAt updatedAt')
-  .skip(skip)
-  .limit(limit)
-  .sort({ createdAt: -1 });
+    const total = await UserAccount.countDocuments(filter);
 
-    sendResponse(res, 200, true, 'Teachers fetched successfully.', teachers, {
+    const query = UserAccount.find(filter)
+      .select('firstName lastName email phoneNumber isSuspended lastLogin createdAt updatedAt')
+      .sort({ createdAt: -1 });
+
+    if (!fetchAll) query.skip(skip).limit(limit);
+
+    const teachers = await query;
+
+    sendResponse(res, 200, true, 'Teachers fetched successfully.', teachers, null, {
       total,
-      page,
-      limit,
+      page: fetchAll ? 1 : page,
+      limit: fetchAll ? total : limit,
     });
   } catch (error) {
     sendResponse(res, 500, false, `Server error: ${(error as Error).message}`);
@@ -170,6 +183,19 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
       const firstAdmin = await UserAccount.findOne({ role: 'admin' }).sort({ createdAt: 1 });
       if (firstAdmin?._id.toString() === id) {
         return sendResponse(res, 403, false, 'Cannot delete the original admin.');
+      }
+    }
+
+    // === BLOCK TEACHER DELETION WHILE ASSIGNMENTS REFERENCE THEM ===
+    if (role === 'teacher') {
+      const taCount = await TeachingAssignment.countDocuments({ teacherId: id });
+      if (taCount > 0) {
+        return sendResponse(
+          res,
+          400,
+          false,
+          `Cannot delete teacher: ${taCount} teaching assignment(s) reference them. Remove those first.`
+        );
       }
     }
 

@@ -119,7 +119,17 @@ export const createTeachingAssignment = async (req: Request, res: Response): Pro
       .populate('subjectId', 'name description')
 
     sendResponse(res, 201, true, 'Teaching assignment created successfully', populated)
-  } catch (error) {
+  } catch (error: any) {
+    // Partial-index uniqueness violations (duplicate homeroom or subject-per-section)
+    if (error?.code === 11000) {
+      sendResponse(
+        res,
+        409,
+        false,
+        'Conflict: a duplicate teaching assignment already exists for this section/role/subject combination'
+      )
+      return
+    }
     sendResponse(res, 500, false, 'Server error creating teaching assignment', null, error)
   }
 }

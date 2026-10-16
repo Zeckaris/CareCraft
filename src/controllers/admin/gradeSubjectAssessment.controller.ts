@@ -121,16 +121,17 @@ export const getGradeSubjectAssessmentById = async (req: Request, res: Response)
 export const getByGradeLevel = async (req: Request, res: Response): Promise<void> => {
     const { level } = req.params
     
-    if (!level || isNaN(Number(level))) {
+    if (!level || !level.trim()) {
         sendResponse(res, 400, false, "Valid grade level required")
         return
     }
 
     try {
+        // Grade.level is stored as a String — match it as a String, not a Number.
         const gsas = await GradeSubjectAssessment.find()
             .populate({
                 path: 'gradeId',
-                match: { level: Number(level) },
+                match: { level: level.trim() },
                 select: 'level description'
             })
             .populate('subjectId', 'name description')
