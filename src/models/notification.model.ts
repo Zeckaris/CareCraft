@@ -8,6 +8,7 @@ const notificationSchema = new Schema<INotification>(
      title: { type: String, trim: true },
     message: { type: String, required: true },
     isRead: { type: Boolean, default: false },
+    priority: { type: String, enum: ['urgent', 'normal', 'low'], default: 'normal' },
     broadcastId: { type: Schema.Types.ObjectId, ref: 'BroadcastMessage', default: null }
   },
   {

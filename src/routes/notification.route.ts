@@ -7,6 +7,7 @@ import {
   getTotalCount,
   markAsRead,
   markAllUnreadAsRead,
+  deleteNotification,
 } from '../controllers/notification.controller.js'
 import { authMiddleware } from '../middlewares/auth.middleware.js'
 
@@ -25,6 +26,9 @@ router.get('/total-count', authMiddleware, getTotalCount);
 // Action endpoints
 router.patch('/:id/read', authMiddleware, markAsRead);
 router.patch('/read-all-unread', authMiddleware, markAllUnreadAsRead);
+
+// Delete own notification
+router.delete('/:id', authMiddleware, deleteNotification);
 
 
 export default router;

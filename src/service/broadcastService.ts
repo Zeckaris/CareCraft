@@ -50,6 +50,7 @@ export const processBroadcastJob = async (broadcastId: string): Promise<void> =>
     type: 'broadcast',
     title: broadcast.title,
     message: broadcast.body,
+    priority: broadcast.priority,
     broadcastId: broadcast._id,
     isRead: false,
   }));

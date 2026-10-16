@@ -26,6 +26,7 @@ export const absenceNotificationWorker = createWorker<IAbsenceNotificationJobDat
       title: 'Absence Alert',
       message: `${studentName} was marked absent on ${date}.`,
       isRead: false,
+      priority: 'normal',
     })
 
     console.log(
