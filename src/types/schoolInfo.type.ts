@@ -17,7 +17,7 @@ export interface ISchoolInfo extends Document {
 
   // Visual Branding
   logo?: string | null;
-  theme: 'palette-1' | 'palette-2' | 'palette-3' | 'palette-4' | 'palette-5' | 'palette-6' | 'palette-7';
+  theme: 'palette-1' | 'palette-2' | 'palette-3' | 'palette-4' | 'palette-5' | 'palette-6' | 'palette-7' | 'palette-8' | 'palette-9' | 'palette-10' | 'palette-11' | 'palette-12';
   fontFamily: 'Roboto' | 'Open Sans' | 'Ubuntu' | 'Lato' | 'Montserrat' | 'Inter' | 'Nunito' | 'Source Sans Pro' | "Mountains of Christmas";
 
   // Location

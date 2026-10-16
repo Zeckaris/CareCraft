@@ -93,6 +93,35 @@ export const getSchoolInfo = async (req: Request, res: Response): Promise<void> 
   }
 };
 
+// Read-only branding for any authenticated user (teacher/parent/student apps).
+// Returns only non-sensitive branding fields, with defaults when no school info exists.
+export const getBranding = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const schoolInfo = await SchoolInfo.findOne()
+      .select('name logo theme fontFamily')
+      .lean();
+
+    if (!schoolInfo) {
+      sendResponse(res, 200, true, "School branding fetched successfully", {
+        name: null,
+        logo: null,
+        theme: "palette-1",
+        fontFamily: "Roboto",
+      });
+      return;
+    }
+
+    sendResponse(res, 200, true, "School branding fetched successfully", {
+      name: schoolInfo.name,
+      logo: schoolInfo.logo ?? null,
+      theme: schoolInfo.theme,
+      fontFamily: schoolInfo.fontFamily,
+    });
+  } catch (error) {
+    sendResponse(res, 500, false, "Internal server error", null, error);
+  }
+};
+
 export const updateSchoolInfo = async (req: Request, res: Response): Promise<void> => {
   try {
     const schoolInfo = await SchoolInfo.findOne();
