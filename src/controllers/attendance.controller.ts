@@ -4,7 +4,12 @@
  * Handles daily attendance for a section, taken by the homeroom teacher.
  *
  * Routes (registered under /api/attendance):
- *   POST   /section/:sectionId/date/:date        – upsert whole-section attendance
+ *   POST   /section/:sectionId/date/:date        – upsert whole-section attendance;
+ *                                                  validate-first with per-record
+ *                                                  outcomes (created | updated |
+ *                                                  unchanged | skipped | conflict |
+ *                                                  rejected) and optional optimistic
+ *                                                  concurrency via records[].expectedUpdatedAt
  *   GET    /section/:sectionId/date/:date        – roster with statuses for a date
  *   GET    /student/:studentId                   – student attendance over a date range
  *   GET    /section/:sectionId                   – section attendance over a date range
@@ -32,7 +37,7 @@ import {
   validateAttendanceDate,
   todayEAT,
 } from '../service/attendanceDateValidator.js'
-import { getYearVariants } from '../utils/yearNormalizer.js'
+import { getYearVariants, normalizeYear } from '../utils/yearNormalizer.js'
 import { AttendanceStatus } from '../types/attendance.type.js'
 
 // ── Constant: correction window for homeroom teachers ────────────────────────
@@ -76,24 +81,161 @@ function isWithinCorrectionWindow(dateStr: string): boolean {
   return diffDays <= HOMEROOM_CORRECTION_DAYS
 }
 
+// ─── per-record outcome types & helpers (offline-queue support) ──────────────
+
+interface SubmissionRecord {
+  studentId: string
+  status: AttendanceStatus
+  /** Omitted → keep existing note on update; '' → clear the note. */
+  note?: string
+  /**
+   * Optimistic-concurrency token.
+   *   absent (undefined) → no expectation, behaves as today (last write wins)
+   *   null               → client believes NO record exists
+   *   ISO string         → must equal the stored record's updatedAt
+   */
+  expectedUpdatedAt?: string | null
+}
+
+type RecordAction = 'created' | 'updated' | 'unchanged' | 'skipped' | 'conflict' | 'rejected'
+
+interface StoredSnapshot {
+  status: AttendanceStatus
+  note: string
+  updatedAt: Date | null
+  markedBy: any
+}
+
+interface RecordOutcome {
+  studentId: string
+  status: AttendanceStatus
+  action: RecordAction
+  reason?: string
+  /** Only present on conflicts: the current stored values. */
+  stored?: StoredSnapshot | null
+}
+
+function storedSnapshot(doc: any): StoredSnapshot {
+  return {
+    status: doc?.status,
+    note: doc?.note ?? '',
+    updatedAt: doc?.updatedAt ?? null,
+    markedBy: doc?.markedBy ?? null,
+  }
+}
+
+function conflictOutcome(
+  rec: SubmissionRecord,
+  reason: string,
+  snapshot: StoredSnapshot | null
+): RecordOutcome {
+  return {
+    studentId: rec.studentId.toString(),
+    status: rec.status,
+    action: 'conflict',
+    reason,
+    stored: snapshot,
+  }
+}
+
+/**
+ * Decides what should happen to a submitted record when a stored record exists.
+ * Pure (no I/O) so it can be reused in the planning pass and on race recovery.
+ */
+function decideAgainstExisting(
+  rec: SubmissionRecord,
+  existing: any,
+  isAdminOrCoord: boolean,
+  date: string
+): { type: 'conflict' | 'unchanged' | 'rejected' | 'update'; reason?: string } {
+  // Optimistic-concurrency check. Records without an expectation behave as today.
+  if (rec.expectedUpdatedAt !== undefined) {
+    if (rec.expectedUpdatedAt === null) {
+      return { type: 'conflict', reason: 'A record already exists but the client expected none' }
+    }
+    const expected = new Date(rec.expectedUpdatedAt)
+    const actual = existing?.updatedAt ? new Date(existing.updatedAt).getTime() : null
+    if (
+      Number.isNaN(expected.getTime()) ||
+      actual === null ||
+      expected.getTime() !== actual
+    ) {
+      return {
+        type: 'conflict',
+        reason: 'expectedUpdatedAt does not match the stored record; it was changed by another user',
+      }
+    }
+  }
+
+  // No-op detection: identical status and (effective) note must not rewrite.
+  const submittedNote = rec.note === undefined ? (existing?.note ?? '') : rec.note
+  if (
+    rec.status === existing?.status &&
+    String(submittedNote ?? '').trim() === String(existing?.note ?? '').trim()
+  ) {
+    return { type: 'unchanged' }
+  }
+
+  // Correction window applies only when editing an existing record.
+  if (!isAdminOrCoord && !isWithinCorrectionWindow(date)) {
+    return {
+      type: 'rejected',
+      reason: `Homeroom teachers may only edit existing attendance records within ${HOMEROOM_CORRECTION_DAYS} days of the date`,
+    }
+  }
+
+  return { type: 'update' }
+}
+
+/**
+ * Enqueues the parent notification for an absence. Never throws – a queue
+ * failure must not fail the attendance save.
+ */
+async function enqueueAbsenceNotification(
+  attendanceId: string,
+  enrollment: any,
+  date: string
+): Promise<void> {
+  const student = enrollment.studentId as any
+  const parentId = student?.parentId?.toString()
+  if (!parentId) return
+  const studentName = [student.firstName, student.middleName, student.lastName]
+    .filter(Boolean)
+    .join(' ')
+  try {
+    await queues.absenceNotification.add('absence', {
+      attendanceId,
+      parentId,
+      studentName,
+      date,
+    })
+  } catch (queueErr) {
+    console.error('Failed to enqueue absence notification:', queueErr)
+  }
+}
+
 // ─── POST /section/:sectionId/date/:date ─────────────────────────────────────
 /**
- * Upsert whole-section attendance for a specific date.
+ * Upsert whole-section attendance for a specific date (offline-queue friendly).
  *
  * Body:
  *   records: Array<{
  *     studentId: string
  *     status: 'present' | 'absent' | 'late' | 'excused'
- *     note?: string
+ *     note?: string                     // omitted → keep existing; '' → clear
+ *     expectedUpdatedAt?: string | null // optional optimistic-concurrency token
  *   }>
  *
- * Roles: homeroom teacher of the section, admin, coordinator
+ * Validate-first: every record is checked (enrollment, update-vs-create,
+ * correction window, optimistic-concurrency expectation) against the DB before
+ * any write, and the write loop never aborts mid-batch. Each record gets a
+ * per-record outcome:
+ *   created | updated | unchanged | skipped | conflict | rejected
  *
- * - Validates the date (no future, no holidays, no non-school days, within calendar)
- * - Homeroom teachers can only correct within HOMEROOM_CORRECTION_DAYS
- * - Processes only students with active enrollments in the section
- * - Enqueues an absence-notification job when status changes to 'absent'
- * - Writes to AuditLog for corrections (when a record already existed)
+ * All-new (optional) request fields: records[].expectedUpdatedAt.
+ * Records without it behave exactly as before (last write wins).
+ *
+ * Roles: homeroom teacher of the section, admin, coordinator
  */
 export const upsertSectionAttendance = async (
   req: AuthRequest,
@@ -146,10 +288,10 @@ export const upsertSectionAttendance = async (
     sendResponse(res, 400, false, dateCheck.error!)
     return
   }
-  const schoolYear = dateCheck.calendar!.academicYear
+  const schoolYear = normalizeYear(dateCheck.calendar!.academicYear)
 
   // ── Parse body ─────────────────────────────────────────────────────────────
-  const { records } = req.body
+  const { records } = (req.body ?? {}) as { records?: SubmissionRecord[] }
   if (!Array.isArray(records) || records.length === 0) {
     sendResponse(res, 400, false, 'Body must contain a non-empty "records" array')
     return
@@ -170,6 +312,15 @@ export const upsertSectionAttendance = async (
       )
       return
     }
+    if (
+      r.expectedUpdatedAt !== undefined &&
+      r.expectedUpdatedAt !== null &&
+      (typeof r.expectedUpdatedAt !== 'string' ||
+        Number.isNaN(new Date(r.expectedUpdatedAt).getTime()))
+    ) {
+      sendResponse(res, 400, false, 'expectedUpdatedAt must be null or an ISO date string')
+      return
+    }
   }
 
   // ── Load active enrollments in this section ───────────────────────────────
@@ -185,125 +336,217 @@ export const upsertSectionAttendance = async (
     return
   }
 
-  // Build a lookup from studentId → enrollment for validation
-  const enrollmentByStudent = new Map<string, typeof activeEnrollments[0]>()
+  // Build a lookup from studentId → enrollment for validation.
+  // studentId is populated + lean, so it is an object with its own _id;
+  // reading it directly must use that _id (a plain object's toString() would
+  // yield "[object Object]" and never match a submitted studentId string).
+  const enrollmentByStudent = new Map<string, any>()
   for (const e of activeEnrollments) {
-    enrollmentByStudent.set(e.studentId.toString(), e)
+    enrollmentByStudent.set(String(e.studentId?._id ?? e.studentId), e)
   }
 
-  // ── Process upserts ───────────────────────────────────────────────────────
-  const markedBy = new Types.ObjectId(user.id.toString())
-  const results: {
-    studentId: string
-    status: string
-    action: 'created' | 'updated' | 'skipped'
-  }[] = []
+  // ── Load existing records for this date in a single query ─────────────────
+  const recordEnrollmentIds = [
+    ...new Set(
+      records
+        .map((r) => enrollmentByStudent.get(r.studentId.toString())?._id?.toString())
+        .filter((x): x is string => Boolean(x))
+    ),
+  ]
+  const existingByEnrollment = new Map<string, any>()
+  if (recordEnrollmentIds.length > 0) {
+    const existingDocs = await Attendance.find({
+      enrollmentId: { $in: recordEnrollmentIds },
+      date,
+    })
+      .populate('markedBy', 'firstName lastName')
+      .lean()
+    for (const doc of existingDocs) {
+      existingByEnrollment.set(String(doc.enrollmentId), doc)
+    }
+  }
 
-  for (const rec of records) {
+  // ── Plan phase: decide every record against DB state; no writes yet ────────
+  const markedBy = new Types.ObjectId(user.id.toString())
+  const results: RecordOutcome[] = new Array(records.length)
+
+  interface PendingWrite {
+    index: number
+    rec: SubmissionRecord
+    enrollment: any
+    kind: 'create' | 'update'
+    existing: any
+  }
+  const pendingWrites: PendingWrite[] = []
+
+  for (let i = 0; i < records.length; i++) {
+    const rec = records[i]
     const sid = rec.studentId.toString()
     const enrollment = enrollmentByStudent.get(sid)
     if (!enrollment) {
-      // Student not actively enrolled in this section – skip silently
-      results.push({ studentId: sid, status: rec.status, action: 'skipped' })
+      // Student not actively enrolled in this section – skip, never abort
+      results[i] = {
+        studentId: sid,
+        status: rec.status,
+        action: 'skipped',
+        reason: 'Student is not actively enrolled in this section',
+      }
       continue
     }
 
-    const filter = {
-      enrollmentId: enrollment._id,
-      date,
-    }
-    const existing = await Attendance.findOne(filter).lean()
-
+    const existing = existingByEnrollment.get(enrollment._id.toString()) ?? null
     if (existing) {
-      // ── Correction path ──────────────────────────────────────────────────
-      // Correction window applies only when editing an existing record
-      if (!isAdminOrCoord && !isWithinCorrectionWindow(date)) {
-        sendResponse(
-          res,
-          403,
-          false,
-          `Homeroom teachers may only edit existing attendance records within ${HOMEROOM_CORRECTION_DAYS} days of the date`
-        )
-        return
+      const decision = decideAgainstExisting(rec, existing, isAdminOrCoord, date)
+      if (decision.type === 'conflict') {
+        results[i] = conflictOutcome(rec, decision.reason!, storedSnapshot(existing))
+        continue
       }
-
-      const prevStatus = existing.status
-      await Attendance.updateOne(filter, {
-        $set: {
+      if (decision.type === 'unchanged') {
+        results[i] = { studentId: sid, status: rec.status, action: 'unchanged' }
+        continue
+      }
+      if (decision.type === 'rejected') {
+        results[i] = {
+          studentId: sid,
           status: rec.status,
-          note: rec.note ?? existing.note,
-          markedBy,
-          sectionId: enrollment.sectionId,
-          schoolYear,
-        },
-      })
-
-      // Audit log for every edit/correction
-      await logAudit(req, {
-        type: 'ATTENDANCE_CORRECTION',
-        message: `Attendance corrected for student ${sid} on ${date}: ${prevStatus} → ${rec.status}`,
-        action: 'corrected',
-        entity: 'Attendance',
-        target: existing._id.toString(),
-      })
-
-      // Enqueue absence notification only when status *changes to* absent
-      if (rec.status === 'absent' && prevStatus !== 'absent') {
-        const student = enrollment.studentId as any
-        const parentId = student?.parentId?.toString()
-        if (parentId) {
-          const studentName = [student.firstName, student.middleName, student.lastName]
-            .filter(Boolean)
-            .join(' ')
-          try {
-            await queues.absenceNotification.add('absence', {
-              attendanceId: existing._id.toString(),
-              parentId,
-              studentName,
-              date,
-            })
-          } catch (queueErr) {
-            console.error('Failed to enqueue absence notification for correction:', queueErr)
-          }
+          action: 'rejected',
+          reason: decision.reason,
         }
+        continue
       }
-
-      results.push({ studentId: sid, status: rec.status, action: 'updated' })
+      pendingWrites.push({ index: i, rec, enrollment, kind: 'update', existing })
     } else {
-      // ── New record path ───────────────────────────────────────────────────
+      // Client expected a record but none exists – conflict, not a silent create.
+      if (typeof rec.expectedUpdatedAt === 'string') {
+        results[i] = conflictOutcome(
+          rec,
+          'No stored record exists but a non-null expectedUpdatedAt was provided',
+          null
+        )
+        continue
+      }
+      pendingWrites.push({ index: i, rec, enrollment, kind: 'create', existing: null })
+    }
+  }
+
+  // ── Write phase: only planned records, per-record try/catch, never aborts ──
+  const buildAttendanceUpdate = (rec: SubmissionRecord, existingNote: string | undefined, enrollment: any) => ({
+    $set: {
+      status: rec.status,
+      note: rec.note === undefined ? existingNote : rec.note,
+      markedBy,
+      sectionId: enrollment.sectionId,
+      schoolYear,
+    },
+  })
+
+  const applyUpdate = async (
+    rec: SubmissionRecord,
+    snapshot: any,
+    enrollment: any
+  ): Promise<RecordOutcome> => {
+    await Attendance.updateOne(
+      { enrollmentId: enrollment._id, date },
+      buildAttendanceUpdate(rec, snapshot.note, enrollment)
+    )
+    await logAudit(req, {
+      type: 'ATTENDANCE_CORRECTION',
+      message: `Attendance corrected for student ${rec.studentId.toString()} on ${date}: ${snapshot.status} → ${rec.status}`,
+      action: 'corrected',
+      entity: 'Attendance',
+      target: snapshot._id.toString(),
+    })
+    if (rec.status === 'absent' && snapshot.status !== 'absent') {
+      await enqueueAbsenceNotification(snapshot._id.toString(), enrollment, date)
+    }
+    return { studentId: rec.studentId.toString(), status: rec.status, action: 'updated' }
+  }
+
+  const attemptCreate = async (pw: PendingWrite): Promise<RecordOutcome> => {
+    const { rec } = pw
+    try {
       const newRecord = await Attendance.create({
-        enrollmentId: enrollment._id,
-        studentId: new Types.ObjectId(sid),
-        sectionId: enrollment.sectionId,
+        enrollmentId: pw.enrollment._id,
+        studentId: new Types.ObjectId(rec.studentId.toString()),
+        sectionId: pw.enrollment.sectionId,
         date,
         status: rec.status,
         note: rec.note ?? '',
         markedBy,
         schoolYear,
       })
-
-      // Enqueue absence notification for new absent records
       if (rec.status === 'absent') {
-        const student = enrollment.studentId as any
-        const parentId = student?.parentId?.toString()
-        if (parentId) {
-          const studentName = [student.firstName, student.middleName, student.lastName]
-            .filter(Boolean)
-            .join(' ')
-          try {
-            await queues.absenceNotification.add('absence', {
-              attendanceId: newRecord._id.toString(),
-              parentId,
-              studentName,
-              date,
-            })
-          } catch (queueErr) {
-            console.error('Failed to enqueue absence notification for new record:', queueErr)
-          }
-        }
+        await enqueueAbsenceNotification(newRecord._id.toString(), pw.enrollment, date)
       }
+      return { studentId: rec.studentId.toString(), status: rec.status, action: 'created' }
+    } catch (err: any) {
+      // Duplicate key = another writer created this record first; treat as
+      // an existing record rather than a 500.
+      if (err?.code !== 11000) throw err
+      return recoverRace(pw)
+    }
+  }
 
-      results.push({ studentId: sid, status: rec.status, action: 'created' })
+  const recoverRace = async (pw: PendingWrite): Promise<RecordOutcome> => {
+    const raced = await Attendance.findOne({
+      enrollmentId: pw.enrollment._id,
+      date,
+    })
+      .populate('markedBy', 'firstName lastName')
+      .lean()
+    if (!raced) return attemptCreate(pw)
+    const decision = decideAgainstExisting(pw.rec, raced, isAdminOrCoord, date)
+    if (decision.type === 'conflict') {
+      return conflictOutcome(pw.rec, decision.reason!, storedSnapshot(raced))
+    }
+    if (decision.type === 'unchanged') {
+      return { studentId: pw.rec.studentId.toString(), status: pw.rec.status, action: 'unchanged' }
+    }
+    if (decision.type === 'rejected') {
+      return {
+        studentId: pw.rec.studentId.toString(),
+        status: pw.rec.status,
+        action: 'rejected',
+        reason: decision.reason,
+      }
+    }
+    return applyUpdate(pw.rec, raced, pw.enrollment)
+  }
+
+  for (const pw of pendingWrites) {
+    const sid = pw.rec.studentId.toString()
+    try {
+      if (pw.kind === 'update') {
+        const upd = await Attendance.updateOne(
+          { enrollmentId: pw.enrollment._id, date },
+          buildAttendanceUpdate(pw.rec, pw.existing.note, pw.enrollment)
+        )
+        if (upd.matchedCount === 0) {
+          // Record was deleted under us by a concurrent writer – re-decide.
+          results[pw.index] = await recoverRace(pw)
+          continue
+        }
+        await logAudit(req, {
+          type: 'ATTENDANCE_CORRECTION',
+          message: `Attendance corrected for student ${sid} on ${date}: ${pw.existing.status} → ${pw.rec.status}`,
+          action: 'corrected',
+          entity: 'Attendance',
+          target: pw.existing._id.toString(),
+        })
+        if (pw.rec.status === 'absent' && pw.existing.status !== 'absent') {
+          await enqueueAbsenceNotification(pw.existing._id.toString(), pw.enrollment, date)
+        }
+        results[pw.index] = { studentId: sid, status: pw.rec.status, action: 'updated' }
+      } else {
+        results[pw.index] = await attemptCreate(pw)
+      }
+    } catch (err) {
+      results[pw.index] = {
+        studentId: sid,
+        status: pw.rec.status,
+        action: 'rejected',
+        reason: `Server error while saving record: ${(err as Error)?.message ?? 'unknown error'}`,
+      }
     }
   }
 
@@ -377,6 +620,8 @@ export const getSectionAttendanceForDate = async (
         note: att?.note ?? null,
         markedBy: att?.markedBy ?? null,
         attendanceId: att?._id ?? null,
+        // Optimistic-concurrency token for the take endpoint (expectedUpdatedAt).
+        updatedAt: att?.updatedAt ?? null,
       }
     })
 
