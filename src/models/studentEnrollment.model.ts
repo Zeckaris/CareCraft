@@ -6,7 +6,12 @@ const studentEnrollmentSchema = new Schema<IStudentEnrollment>(
     studentId: { type: Schema.Types.ObjectId, ref: 'Student', required: true },
     gradeId: { type: Schema.Types.ObjectId, ref: 'Grade', required: true },
     sectionId: { type: Schema.Types.ObjectId, ref: 'Section', default: null },
-    schoolYear: { type: String, required: true, trim: true },
+    schoolYear: {
+      type: String,
+      required: true,
+      trim: true,
+      match: [/^\d{4}-\d{4}$/, 'School year must be in format YYYY-YYYY (e.g., 2024-2025)'],
+    },
     isActive: { type: Boolean, default: true }
   },
   {

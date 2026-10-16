@@ -36,7 +36,12 @@ const attendanceSchema = new Schema<IAttendance>(
       ref: 'UserAccount',
       required: true,
     },
-    schoolYear: { type: String, required: true, trim: true },
+    schoolYear: {
+      type: String,
+      required: true,
+      trim: true,
+      match: [/^\d{4}-\d{4}$/, 'School year must be in format YYYY-YYYY (e.g., 2024-2025)'],
+    },
   },
   {
     timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },

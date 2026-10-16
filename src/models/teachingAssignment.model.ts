@@ -7,7 +7,12 @@ const teachingAssignmentSchema = new Schema<ITeachingAssignment>(
     teacherId: { type: Schema.Types.ObjectId, ref: 'UserAccount', required: true },
     role: { type: String, enum: ['homeroom', 'subject'], required: true },
     subjectId: { type: Schema.Types.ObjectId, ref: 'Subject', default: null },
-    schoolYear: { type: String, required: true, trim: true }, // denormalised from section
+    schoolYear: {
+      type: String,
+      required: true,
+      trim: true,
+      match: [/^\d{4}-\d{4}$/, 'School year must be in format YYYY-YYYY (e.g., 2024-2025)'],
+    }, // denormalised from section
   },
   {
     timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },

@@ -8,6 +8,7 @@ const sectionSchema = new Schema<ISection>(
       type: String,
       required: true,
       trim: true,
+      match: [/^\d{4}-\d{4}$/, 'School year must be in format YYYY-YYYY (e.g., 2024-2025)'],
     },
     name: { type: String, required: true, trim: true, uppercase: true, maxlength: 20 },
     isActive: { type: Boolean, default: true },
