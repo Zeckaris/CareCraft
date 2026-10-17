@@ -570,14 +570,19 @@ export const deleteAttributeEvaluation = async (req: AuthRequest, res: Response)
     }
 
     // Check for badge criteria dependencies
-    const dependentCriteria = await BadgeCriteria.findOne({
+    const criteriaCount = await BadgeCriteria.countDocuments({
       $or: [
         { type: 'attributeScore', attributeCategoryId: { $in: evaluation.attributes.map(a => a.attributeId) } },
         { type: 'attributeEvaluationAverage', studentEnrollmentId: evaluation.studentEnrollmentId }
       ]
     });
-    if (dependentCriteria) {
-      sendResponse(res, 400, false, 'Cannot delete evaluation: Linked to badge criteria');
+    if (criteriaCount > 0) {
+      sendResponse(
+        res,
+        400,
+        false,
+        `Cannot delete evaluation: still referenced by ${criteriaCount} badge criteria. Remove those first.`
+      );
       return;
     }
 

@@ -614,9 +614,14 @@ export const deleteActionPlan = async (req: AuthRequest, res: Response): Promise
     }
 
     // Check if linked to BadgeCriteria
-    const dependentCriteria = await BadgeCriteria.findOne({ actionPlanId: id });
-    if (dependentCriteria) {
-      sendResponse(res, 400, false, 'Cannot delete action plan: It is linked to badge criteria');
+    const criteriaCount = await BadgeCriteria.countDocuments({ actionPlanId: id });
+    if (criteriaCount > 0) {
+      sendResponse(
+        res,
+        400,
+        false,
+        `Cannot delete action plan: still referenced by ${criteriaCount} badge criteria. Remove those first.`
+      );
       return;
     }
 
