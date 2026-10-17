@@ -4,6 +4,7 @@ import { StudentEnrollment } from '../models/studentEnrollment.model.js';
 import { Student } from '../models/student.model.js';
 import { AcademicCalendar } from '../models/academicCalendar.model.js';
 import { Section } from '../models/section.model.js';
+import { Grade } from '../models/grade.model.js';
 import { sendResponse } from '../utils/sendResponse.util.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import {
@@ -28,56 +29,40 @@ const formatDate = (date: Date | string | undefined): string => {
 };
 
 /**
- * Resolves sectionId for an enrollment:
- * - If explicit sectionId provided: validates that it exists, is active, and matches gradeId and schoolYear.
- * - If sectionId omitted:
- *   - Exactly 1 active section exists for (gradeId, schoolYear) -> auto-assigns it.
- *   - Several active sections exist -> returns error requiring sectionId.
- *   - No active sections exist -> returns error.
+ * Resolves the sectionId for an enrollment.
+ *
+ * Sections are generated AFTER enrollment (from unassigned students), so a
+ * section is optional at creation time:
+ * - If an explicit sectionId is supplied, it must exist, be active, and belong
+ *   to the same grade and school year as the enrollment.
+ * - If it is omitted, the enrollment is created with no section (sectionId null).
  */
 export const resolveSectionForEnrollment = async (
   gradeId: any,
   schoolYear: string,
   explicitSectionId?: any
 ): Promise<{ sectionId?: Types.ObjectId; error?: string }> => {
-  if (explicitSectionId) {
-    if (!mongoose.isValidObjectId(explicitSectionId)) {
-      return { error: 'Invalid sectionId' };
-    }
-    const section = await Section.findById(explicitSectionId);
-    if (!section) {
-      return { error: 'Section not found' };
-    }
-    if (section.gradeId.toString() !== gradeId.toString()) {
-      return { error: 'Section does not belong to the selected grade' };
-    }
-    if (!yearsMatch(section.schoolYear, schoolYear)) {
-      return { error: `Section belongs to school year ${section.schoolYear}, but enrollment is for ${schoolYear}` };
-    }
-    if (!section.isActive) {
-      return { error: 'Cannot enroll in an inactive section' };
-    }
-    return { sectionId: section._id };
+  if (explicitSectionId === undefined || explicitSectionId === null || explicitSectionId === '') {
+    return {};
   }
 
-  // Auto-assign logic when sectionId is omitted
-  const activeSections = await Section.find({
-    gradeId,
-    schoolYear: { $in: getYearVariants(schoolYear) },
-    isActive: true,
-  });
-  if (activeSections.length === 1) {
-    return { sectionId: activeSections[0]._id };
-  } else if (activeSections.length > 1) {
-    const names = activeSections.map((s) => s.name).join(', ');
-    return {
-      error: `Multiple active sections exist for this grade and school year (${names}). Please specify a sectionId.`,
-    };
-  } else {
-    return {
-      error: 'No active section exists for this grade and school year. Please create a section first.',
-    };
+  if (!mongoose.isValidObjectId(explicitSectionId)) {
+    return { error: 'Invalid sectionId' };
   }
+  const section = await Section.findById(explicitSectionId);
+  if (!section) {
+    return { error: 'Section not found' };
+  }
+  if (!section.isActive) {
+    return { error: 'Cannot enroll in an inactive section' };
+  }
+  if (section.gradeId.toString() !== gradeId.toString()) {
+    return { error: 'Section does not belong to the selected grade' };
+  }
+  if (!yearsMatch(section.schoolYear, schoolYear)) {
+    return { error: `Section belongs to school year ${section.schoolYear}, but enrollment is for ${schoolYear}` };
+  }
+  return { sectionId: section._id };
 };
 
 export const getAllEnrollments = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -308,7 +293,13 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    // Resolve section (explicit or automatic)
+    const grade = await Grade.findById(gradeId);
+    if (!grade) {
+      sendResponse(res, 404, false, 'Grade not found.');
+      return;
+    }
+
+    // Resolve section (optional; validated only when supplied explicitly)
     const { sectionId: resolvedSectionId, error: sectionErr } = await resolveSectionForEnrollment(
       gradeId,
       schoolYear,
@@ -322,7 +313,7 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
     const enrollment = await StudentEnrollment.create({
       studentId,
       gradeId,
-      sectionId: resolvedSectionId,
+      sectionId: resolvedSectionId ?? null,
       schoolYear,
       isActive: true,
     });
@@ -563,7 +554,13 @@ export const bulkCreateEnrollments = async (req: Request, res: Response): Promis
       return;
     }
 
-    // Resolve section for the bulk batch
+    const grade = await Grade.findById(gradeId);
+    if (!grade) {
+      sendResponse(res, 404, false, 'Grade not found.');
+      return;
+    }
+
+    // Resolve section for the bulk batch (optional; validated only when supplied explicitly)
     const { sectionId: resolvedSectionId, error: sectionErr } = await resolveSectionForEnrollment(
       gradeId,
       schoolYear,
@@ -601,7 +598,7 @@ export const bulkCreateEnrollments = async (req: Request, res: Response): Promis
           const enrollment = await StudentEnrollment.create({
             studentId,
             gradeId,
-            sectionId: resolvedSectionId,
+            sectionId: resolvedSectionId ?? null,
             schoolYear,
             isActive: true,
           });
