@@ -117,11 +117,14 @@ export const deleteAssessmentType = async (req: Request, res: Response): Promise
     const usedInGSA = await GradeSubjectAssessment.findOne({ conductedStages: id })
 
     if (usedInSetup || usedInGSA) {
-      const usedPlaces: string[] = []
-      if (usedInSetup) usedPlaces.push("Assessment Setup")
-      if (usedInGSA) usedPlaces.push("Grade Subject Assessment")
+      const setupCount = usedInSetup ? await AssessmentSetup.countDocuments({ assessmentTypeIds: id }) : 0
+      const gsaCount = usedInGSA ? await GradeSubjectAssessment.countDocuments({ conductedStages: id }) : 0
 
-      sendResponse(res, 400, false, `Cannot delete assessment type because it is referenced in: ${usedPlaces.join(", ")}. Please delete or update the referenced setup(s) before removing this assessment type.`, {
+      const blockers: string[] = []
+      if (setupCount > 0) blockers.push(`${setupCount} assessment setup(s)`)
+      if (gsaCount > 0) blockers.push(`${gsaCount} grade subject assessment(s)`)
+
+      sendResponse(res, 400, false, `Cannot delete assessment type: still referenced by ${blockers.join(", ")}. Remove those records first.`, {
         references: {
           setupId: usedInSetup?._id || null,
           gradeSubjectAssessmentId: usedInGSA?._id || null,

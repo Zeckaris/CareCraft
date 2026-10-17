@@ -162,11 +162,14 @@ export const deleteAssessmentSetup = async (req: Request, res: Response): Promis
     const usedInGSA = await GradeSubjectAssessment.findOne({ assessmentSetupId: id });
 
     if (usedInScore || usedInGSA) {
-      const usedPlaces: string[] = [];
-      if (usedInScore) usedPlaces.push("Assessment Scores");
-      if (usedInGSA) usedPlaces.push("Grade Subject Assessment");
+      const scoreCount = usedInScore ? await AssessmentScore.countDocuments({ assessmentSetupId: id }) : 0;
+      const gsaCount = usedInGSA ? await GradeSubjectAssessment.countDocuments({ assessmentSetupId: id }) : 0;
 
-      sendResponse(res, 400, false, `Cannot delete assessment setup because it is referenced in: ${usedPlaces.join(", ")}. Please delete or update the referenced records before removing this assessment setup.`, {
+      const blockers: string[] = [];
+      if (scoreCount > 0) blockers.push(`${scoreCount} assessment score(s)`);
+      if (gsaCount > 0) blockers.push(`${gsaCount} grade subject assessment(s)`);
+
+      sendResponse(res, 400, false, `Cannot delete assessment setup: still referenced by ${blockers.join(", ")}. Remove those records first.`, {
         references: {
           assessmentScoreId: usedInScore?._id || null,
           gradeSubjectAssessmentId: usedInGSA?._id || null,
