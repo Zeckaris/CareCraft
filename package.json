@@ -9,13 +9,14 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "seed-types": "tsx src/scripts/seedDemoTypes.ts",
     "seed-setups": "tsx src/scripts/seedDemoSetups.ts",
     "seed-bootstrap": "tsx src/scripts/seedBootstrap.ts",
     "seed-demo": "tsx src/scripts/seedDemoData.ts",
     "seed": "npm run seed-types && npm run seed-setups && npm run seed-bootstrap",
     "migrate:sections": "tsx src/scripts/migrateAddSections.ts",
+    "migrate:schoolyears": "tsx src/scripts/migrateNormalizeSchoolYears.ts",
     "migrate:conducted": "tsx src/scripts/migrateConductedAssessments.ts",
     "dev": "nodemon --watch src --exec tsx src/index.ts"
   },
