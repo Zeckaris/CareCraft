@@ -37,6 +37,9 @@ import notificationRouter from './routes/notification.route.js';
 import sectionRouter from './routes/section.route.js';
 import teachingAssignmentRouter from './routes/teachingAssignment.route.js';
 import attendanceRouter from './routes/attendance.route.js';
+import scheduleRouter from './routes/schedule.route.js';
+import { recoverStaleGenerationJobs } from './service/scheduleGeneration.service.js';
+import { ensureScheduleIndexes } from './utils/scheduleIndexes.util.js';
 
 import './workers/broadcast.worker.js';
 import './workers/absenceNotification.worker.js';
@@ -105,6 +108,7 @@ app.use('/api/notifications', notificationRouter);
 app.use('/api/section', sectionRouter);
 app.use('/api/teaching-assignment', teachingAssignmentRouter);
 app.use('/api/attendance', attendanceRouter);
+app.use('/api/schedule', scheduleRouter);
 
 // ===== DB + Server Start =====
 connectDB().then(() => {
@@ -113,6 +117,12 @@ connectDB().then(() => {
   app.listen(port, '0.0.0.0', () => {
     console.log(`Server running on port ${port}`);
   });
+
+  // Additively ensure the schedule indexes exist (never drops existing ones).
+  void ensureScheduleIndexes();
+
+  // Any generation jobs left queued/running belong to a previous process.
+  void recoverStaleGenerationJobs();
 });
 
 // ===== Background Tasks =====
