@@ -22,13 +22,22 @@ const isValidSchoolYear = async (schoolYear: string): Promise<boolean> => {
   return !!cal
 }
 
+/** Counts every kind of record that references this section. */
+const getSectionReferences = async (sectionId: any) => {
+  const [activeEnrollmentCount, inactiveEnrollmentCount, teachingAssignmentCount] =
+    await Promise.all([
+      StudentEnrollment.countDocuments({ sectionId, isActive: true }),
+      StudentEnrollment.countDocuments({ sectionId, isActive: false }),
+      TeachingAssignment.countDocuments({ sectionId }),
+    ])
+  return { activeEnrollmentCount, inactiveEnrollmentCount, teachingAssignmentCount }
+}
+
 /** True if any enrollment or teaching-assignment references this section. */
 const isSectionReferenced = async (sectionId: any): Promise<boolean> => {
-  const [envCount, taCount] = await Promise.all([
-    StudentEnrollment.countDocuments({ sectionId }),
-    TeachingAssignment.countDocuments({ sectionId }),
-  ])
-  return envCount > 0 || taCount > 0
+  const { activeEnrollmentCount, inactiveEnrollmentCount, teachingAssignmentCount } =
+    await getSectionReferences(sectionId)
+  return activeEnrollmentCount > 0 || inactiveEnrollmentCount > 0 || teachingAssignmentCount > 0
 }
 
 // ─── CRUD ────────────────────────────────────────────────────────────────────
@@ -271,12 +280,20 @@ export const deleteSection = async (req: Request, res: Response): Promise<void> 
       return
     }
 
-    if (await isSectionReferenced(section._id)) {
+    const { activeEnrollmentCount, inactiveEnrollmentCount, teachingAssignmentCount } =
+      await getSectionReferences(section._id)
+
+    const blockers: string[] = []
+    if (activeEnrollmentCount > 0) blockers.push(`${activeEnrollmentCount} enrollment(s)`)
+    if (inactiveEnrollmentCount > 0) blockers.push(`${inactiveEnrollmentCount} inactive enrollment(s)`)
+    if (teachingAssignmentCount > 0) blockers.push(`${teachingAssignmentCount} teaching assignment(s)`)
+
+    if (blockers.length > 0) {
       sendResponse(
         res,
         400,
         false,
-        'Cannot delete section: enrollments or teaching assignments reference it. Remove those first.'
+        `Cannot delete section: still referenced by ${blockers.join(', ')}. Remove those records first.`
       )
       return
     }

@@ -4,6 +4,7 @@ import { sendResponse } from '../../utils/sendResponse.util.js'
 import { Types } from "mongoose"
 import { StudentEnrollment } from '../../models/studentEnrollment.model.js'
 import { Section } from '../../models/section.model.js'
+import { GradeSubjectAssessment } from '../../models/gradeSubjectAssessment.model.js'
 
 
 export const createGrade= async (req:Request, res:Response):Promise<void> =>{
@@ -120,24 +121,26 @@ export const deleteGrade = async (req: Request, res: Response): Promise<void> =>
       return
     }
 
-    const enrollmentCount = await StudentEnrollment.countDocuments({ gradeId: id })
-    if (enrollmentCount > 0) {
-      sendResponse(
-        res,
-        400,
-        false,
-        `Cannot delete "${grade.level}" — ${enrollmentCount} enrollment(s) linked. Remove them first.`
-      )
-      return
-    }
+    const [activeEnrollmentCount, inactiveEnrollmentCount, sectionCount, gsaCount] =
+      await Promise.all([
+        StudentEnrollment.countDocuments({ gradeId: id, isActive: true }),
+        StudentEnrollment.countDocuments({ gradeId: id, isActive: false }),
+        Section.countDocuments({ gradeId: id }),
+        GradeSubjectAssessment.countDocuments({ gradeId: id }),
+      ])
 
-    const sectionCount = await Section.countDocuments({ gradeId: id })
-    if (sectionCount > 0) {
+    const blockers: string[] = []
+    if (activeEnrollmentCount > 0) blockers.push(`${activeEnrollmentCount} enrollment(s)`)
+    if (inactiveEnrollmentCount > 0) blockers.push(`${inactiveEnrollmentCount} inactive enrollment(s)`)
+    if (sectionCount > 0) blockers.push(`${sectionCount} section(s)`)
+    if (gsaCount > 0) blockers.push(`${gsaCount} grade-subject assessment(s)`)
+
+    if (blockers.length > 0) {
       sendResponse(
         res,
         400,
         false,
-        `Cannot delete "${grade.level}" — ${sectionCount} section(s) exist for this grade. Remove them first.`
+        `Cannot delete "${grade.level}" — still referenced by ${blockers.join(', ')}. Remove those records first.`
       )
       return
     }
