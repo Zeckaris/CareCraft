@@ -78,6 +78,15 @@ export interface BellPeriod {
   endMinutes: number
 }
 
+export interface DayBreak {
+  /** Number of the period immediately before this break (1-based). */
+  afterPeriod: number
+  startTime: string
+  endTime: string
+  durationMinutes: number
+  label: string | null
+}
+
 export interface BellTimeline {
   periods: BellPeriod[]
   periodCount: number
@@ -85,6 +94,7 @@ export interface BellTimeline {
   finishMinutes: number
   /** Periods between breaks, e.g. [3, 2, 2]. Always sums to periodCount. */
   groups: number[]
+  breaks: DayBreak[]
   totalMinutes: number
 }
 
@@ -96,6 +106,7 @@ export interface DayDerived {
   finishTime: string
   periods: BellPeriod[]
   groups: number[]
+  breaks: DayBreak[]
   dailyTeachingCap: number
 }
 
@@ -107,6 +118,7 @@ export interface SaturdayDerived {
   finishTime: string
   periods: BellPeriod[]
   groups: number[]
+  breaks: DayBreak[]
 }
 
 export interface ScheduleSettingDerived {
@@ -152,6 +164,7 @@ export function buildBellTimeline(schedule: BellSchedule): BellTimeline {
 
   const periods: BellPeriod[] = []
   const groups: number[] = []
+  const breaks: DayBreak[] = []
   let cursor = startMinutes
   let currentGroup = 0
   let periodIndex = 0
@@ -170,9 +183,20 @@ export function buildBellTimeline(schedule: BellSchedule): BellTimeline {
         endMinutes: cursor + duration,
       })
       currentGroup += 1
-    } else if (currentGroup > 0) {
-      groups.push(currentGroup)
-      currentGroup = 0
+    } else {
+      if (currentGroup > 0) {
+        groups.push(currentGroup)
+        currentGroup = 0
+      }
+      if (block?.type === 'break') {
+        breaks.push({
+          afterPeriod: periods.length,
+          startTime: formatMinutesToTime(cursor),
+          endTime: formatMinutesToTime(cursor + duration),
+          durationMinutes: duration,
+          label: block?.label ?? null,
+        })
+      }
     }
 
     cursor += duration
@@ -187,6 +211,7 @@ export function buildBellTimeline(schedule: BellSchedule): BellTimeline {
     finishTime: formatMinutesToTime(cursor),
     finishMinutes: cursor,
     groups,
+    breaks,
     totalMinutes,
   }
 }
@@ -371,6 +396,7 @@ export function deriveScheduleSetting(setting: ScheduleSettingData): ScheduleSet
       finishTime: timeline.finishTime,
       periods: timeline.periods,
       groups: timeline.groups,
+      breaks: timeline.breaks,
       dailyTeachingCap: Math.max(0, timeline.periodCount - minFree),
     }
   })
@@ -396,7 +422,55 @@ export function deriveScheduleSetting(setting: ScheduleSettingData): ScheduleSet
           finishTime: saturdayTimeline.finishTime,
           periods: saturdayTimeline.periods,
           groups: saturdayTimeline.groups,
+          breaks: saturdayTimeline.breaks,
         }
       : null,
   }
+}
+
+export interface TimelinePeriod {
+  period: number
+  startTime: string
+  endTime: string
+}
+
+export interface TimelineBreak {
+  afterPeriod: number
+  startTime: string
+  endTime: string
+  durationMinutes: number
+  label: string | null
+}
+
+export interface TimelineDay {
+  day: ScheduleDay
+  source: 'weekday' | 'saturday'
+  startTime: string
+  endTime: string
+  periods: TimelinePeriod[]
+  breaks: TimelineBreak[]
+}
+
+/**
+ * Builds the day-by-day drawable timeline (periods and breaks per enabled day,
+ * in week order) from a stored setting. Saturday uses its own bell schedule when
+ * configured and falls back to the weekday one otherwise.
+ */
+export function deriveTimeline(setting: ScheduleSettingData): TimelineDay[] {
+  const derived = deriveScheduleSetting(setting)
+  return derived.perDay
+    .slice()
+    .sort((a, b) => ALL_SCHEDULE_DAYS.indexOf(a.day) - ALL_SCHEDULE_DAYS.indexOf(b.day))
+    .map((d) => ({
+      day: d.day,
+      source: d.source,
+      startTime: d.startTime,
+      endTime: d.periods.length ? d.periods[d.periods.length - 1].end : d.finishTime,
+      periods: d.periods.map((p, i) => ({
+        period: i + 1,
+        startTime: p.start,
+        endTime: p.end,
+      })),
+      breaks: d.breaks,
+    }))
 }

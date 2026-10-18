@@ -31,10 +31,50 @@ import {
   serializeEntry,
   serializeSchedule,
 } from './scheduleRead.controller.js'
-import { ALL_SCHEDULE_DAYS, type ScheduleDay } from '../utils/scheduleSetting.util.js'
+import {
+  ALL_SCHEDULE_DAYS,
+  deriveTimeline,
+  type ScheduleDay,
+  type TimelineDay,
+} from '../utils/scheduleSetting.util.js'
 
 async function findPublished(schoolYear: string) {
   return Schedule.findOne({ schoolYear, status: 'published' }).sort({ publishedAt: -1 }).lean()
+}
+
+/** Week order (monday → saturday), then period. */
+const DAY_POSITION = new Map<ScheduleDay, number>(ALL_SCHEDULE_DAYS.map((d, i) => [d, i]))
+
+function sortEntriesByWeek(entries: any[]): any[] {
+  return [...entries].sort((a, b) => {
+    const da = DAY_POSITION.get(a.day) ?? Number.MAX_SAFE_INTEGER
+    const db = DAY_POSITION.get(b.day) ?? Number.MAX_SAFE_INTEGER
+    return da - db || a.period - b.period
+  })
+}
+
+/**
+ * The enabled days (week order) and the drawable timeline from the schedule's
+ * settings snapshot. Falls back to entry-derived days when the snapshot is
+ * missing or malformed.
+ */
+function daysAndTimeline(
+  schedule: any,
+  serialized: any[]
+): { days: ScheduleDay[]; timeline: { days: TimelineDay[] } } {
+  const snapshot = schedule?.settingsSnapshot
+  if (snapshot) {
+    try {
+      const days = deriveTimeline(snapshot)
+      return { days: days.map((d) => d.day), timeline: { days } }
+    } catch {
+      // Malformed/legacy snapshot: fall through to an entry-derived day list.
+    }
+  }
+  return {
+    days: ALL_SCHEDULE_DAYS.filter((d) => serialized.some((e: any) => e.day === d)),
+    timeline: { days: [] },
+  }
 }
 
 /**
@@ -75,8 +115,10 @@ export const getPublishedSchedule = async (req: Request, res: Response): Promise
  * GET /api/schedule/my?schoolYear=YYYY-YYYY
  * Roles: teacher
  *
- * The caller's own entries in the year's published schedule, grouped by day
- * with each period's start/end time, plus the schedule id and publish time.
+ * The caller's own entries in the year's published schedule, as a flat list
+ * plus the ordered list of days that have entries, each period carrying its
+ * start/end time, along with the schedule id and publish time. Mirrors the
+ * shape of GET /sections/:sectionId/published (scope key differs).
  */
 export const getMySchedule = async (req: AuthRequest, res: Response): Promise<void> => {
   const { schoolYear } = req.query
@@ -98,16 +140,8 @@ export const getMySchedule = async (req: AuthRequest, res: Response): Promise<vo
       .lean()
 
     const times = periodTimeIndex(schedule)
-    const serialized = entries.map((e: any) => serializeEntry(e, times))
-    const byDay = new Map<string, any[]>()
-    for (const e of serialized) {
-      if (!byDay.has(e.day)) byDay.set(e.day, [])
-      byDay.get(e.day)!.push(e)
-    }
-    const days = ALL_SCHEDULE_DAYS.filter((d) => byDay.has(d)).map((day) => ({
-      day,
-      periods: byDay.get(day)!.sort((a, b) => a.period - b.period),
-    }))
+    const serialized = sortEntriesByWeek(entries.map((e: any) => serializeEntry(e, times)))
+    const { days, timeline } = daysAndTimeline(schedule, serialized)
 
     sendResponse(res, 200, true, 'Your schedule fetched', {
       scheduleId: String(schedule._id),
@@ -116,6 +150,8 @@ export const getMySchedule = async (req: AuthRequest, res: Response): Promise<vo
       teacherId,
       count: serialized.length,
       days,
+      timeline,
+      entries: serialized,
     })
   } catch (error) {
     sendResponse(res, 500, false, 'Server error fetching your schedule', null, error)
@@ -188,7 +224,8 @@ export const getSectionPublishedSchedule = async (req: AuthRequest, res: Respons
       .sort({ day: 1, period: 1 })
       .lean()
     const times = periodTimeIndex(schedule)
-    const serialized = entries.map((e: any) => serializeEntry(e, times))
+    const serialized = sortEntriesByWeek(entries.map((e: any) => serializeEntry(e, times)))
+    const { days, timeline } = daysAndTimeline(schedule, serialized)
 
     sendResponse(res, 200, true, 'Section schedule fetched', {
       scheduleId: String(schedule._id),
@@ -196,7 +233,8 @@ export const getSectionPublishedSchedule = async (req: AuthRequest, res: Respons
       sectionId,
       publishedAt: schedule.publishedAt ?? null,
       count: serialized.length,
-      days: ALL_SCHEDULE_DAYS.filter((d) => serialized.some((e: any) => e.day === d)),
+      days,
+      timeline,
       entries: serialized,
     })
   } catch (error) {
