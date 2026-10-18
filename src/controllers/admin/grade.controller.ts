@@ -140,7 +140,7 @@ export const deleteGrade = async (req: Request, res: Response): Promise<void> =>
         res,
         400,
         false,
-        `Cannot delete "${grade.level}" — still referenced by ${blockers.join(', ')}. Remove those records first.`
+        `Cannot delete "${grade.level}". It is still referenced by ${blockers.join(', ')}. Remove those records first.`
       )
       return
     }
