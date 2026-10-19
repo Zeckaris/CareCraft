@@ -42,6 +42,12 @@ const attendanceSchema = new Schema<IAttendance>(
       trim: true,
       match: [/^\d{4}-\d{4}$/, 'School year must be in format YYYY-YYYY (e.g., 2024-2025)'],
     },
+    /** Resolved academic term for the attendance date. Legacy rows may be null. */
+    academicTermId: {
+      type: Schema.Types.ObjectId,
+      ref: 'AcademicTerm',
+      default: null,
+    },
   },
   {
     timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
@@ -62,5 +68,8 @@ attendanceSchema.index({ sectionId: 1, schoolYear: 1 })
 
 // Student + year summary queries.
 attendanceSchema.index({ studentId: 1, schoolYear: 1 })
+
+// Term-scoped queries and term delete guards.
+attendanceSchema.index({ academicTermId: 1 })
 
 export const Attendance = model<IAttendance>('Attendance', attendanceSchema)

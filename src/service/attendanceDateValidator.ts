@@ -3,34 +3,26 @@
  *
  * Centralises all date-validation rules for attendance:
  *   - No future dates
- *   - Must fall within an active academic calendar
+ *   - Must fall within an academic calendar
+ *   - Must fall inside an academic term of that calendar
  *   - Must not be a holiday listed in that calendar
  *   - Must be a working school day (Mon–Fri by default, or per SchoolInfo)
  *
- * The school is in Africa/Addis_Ababa (UTC+3, no DST).
- * We treat a "calendar date" as a YYYY-MM-DD string derived from the local
- * Addis Ababa clock so that midnight UTC does not drift the date back by one.
+ * All dates are calendar-date strings in the school timezone from
+ * SchoolInfo.timezone (default Africa/Addis_Ababa).
  */
 
 import { AcademicCalendar } from '../models/academicCalendar.model.js'
+import { AcademicTerm } from '../models/academicTerm.model.js'
 import { SchoolInfo } from '../models/schoolInfo.model.js'
 import { getYearVariants } from '../utils/yearNormalizer.js'
-
-const TZ = 'Africa/Addis_Ababa'
-
-/**
- * Returns today's date in YYYY-MM-DD format as seen in Addis Ababa.
- */
-export function todayEAT(): string {
-  return new Date().toLocaleDateString('en-CA', { timeZone: TZ })
-}
-
-/**
- * Converts any Date object to a YYYY-MM-DD string in Addis Ababa time.
- */
-export function toEATDateString(d: Date): string {
-  return d.toLocaleDateString('en-CA', { timeZone: TZ })
-}
+import { getCurrentCalendar } from './currentAcademic.service.js'
+import {
+  getSchoolTimezone,
+  isSchoolDateString,
+  toSchoolDateString,
+  todaySchoolDate,
+} from '../utils/schoolDate.util.js'
 
 /** Mapping from school-days string keys to JS day-of-week (0=Sun, 6=Sat). */
 const DAY_NAMES: Record<string, number> = {
@@ -49,8 +41,6 @@ const DAY_NAMES: Record<string, number> = {
  */
 async function getWorkingDays(): Promise<Set<number>> {
   const info = await SchoolInfo.findOne().select('workingDays').lean()
-  // workingDays is an optional array of day-name strings on SchoolInfo.
-  // If it doesn't exist in the schema yet, fall back to Mon–Fri.
   const raw: string[] | undefined = (info as any)?.workingDays
   if (raw && Array.isArray(raw) && raw.length > 0) {
     const days = new Set<number>()
@@ -60,7 +50,6 @@ async function getWorkingDays(): Promise<Set<number>> {
     }
     return days
   }
-  // Default: Monday (1) through Friday (5)
   return new Set([1, 2, 3, 4, 5])
 }
 
@@ -74,58 +63,61 @@ export interface DateValidationResult {
     endDate: Date
     holidayDates: Date[]
   }
+  /** The term whose dates contain the attendance date. */
+  term?: any
 }
 
 /**
- * Validates that `dateStr` (YYYY-MM-DD) is a legal attendance date:
- *   1. Parseable date
- *   2. Not in the future (vs today in Addis Ababa)
- *   3. Falls within the active academic calendar bounds
- *   4. Is not a listed holiday
- *   5. Is a working school day
+ * Validates that `dateStr` (YYYY-MM-DD) is a legal attendance date.
  *
- * @param dateStr  YYYY-MM-DD – already assumed to be in EAT local date space
+ * @param dateStr  YYYY-MM-DD in the school's calendar-date space
  * @param schoolYear  Optional – if supplied the calendar for that year is used;
- *                    otherwise the currently active calendar is used.
+ *                    otherwise the derived current calendar is used.
  */
 export async function validateAttendanceDate(
   dateStr: string,
   schoolYear?: string
 ): Promise<DateValidationResult> {
   // ── 1. Basic format & parseability ────────────────────────────────────────
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    return { valid: false, error: 'date must be in YYYY-MM-DD format' }
-  }
-  const [yr, mo, dy] = dateStr.split('-').map(Number)
-  // Construct the Date at noon UTC so local-day arithmetic stays unambiguous
-  const dateObj = new Date(Date.UTC(yr, mo - 1, dy, 12, 0, 0))
-  if (isNaN(dateObj.getTime())) {
-    return { valid: false, error: `"${dateStr}" is not a valid calendar date` }
+  if (!isSchoolDateString(dateStr)) {
+    return { valid: false, error: 'date must be a valid YYYY-MM-DD date' }
   }
 
+  const timeZone = await getSchoolTimezone()
+  const today = todaySchoolDate(timeZone)
+
   // ── 2. No future dates ────────────────────────────────────────────────────
-  const today = todayEAT()
   if (dateStr > today) {
     return { valid: false, error: 'Cannot record attendance for a future date' }
   }
 
   // ── 3. Academic calendar bounds ───────────────────────────────────────────
-  const calFilter: any = schoolYear
-    ? { academicYear: { $in: getYearVariants(schoolYear) } }
-    : { isCurrent: true }
+  let cal: any = null
+  if (schoolYear) {
+    cal = await AcademicCalendar.findOne({
+      academicYear: { $in: getYearVariants(schoolYear) },
+    }).lean()
+  } else {
+    cal = await getCurrentCalendar()
+  }
 
-  const cal = await AcademicCalendar.findOne(calFilter).lean()
   if (!cal) {
     return {
       valid: false,
       error: schoolYear
         ? `No academic calendar found for school year "${schoolYear}"`
-        : 'No active academic calendar found',
+        : 'No current academic calendar found',
     }
   }
 
-  const calStart = toEATDateString(cal.startDate)
-  const calEnd   = toEATDateString(cal.endDate)
+  const calStart = toSchoolDateString(cal.startDate, timeZone)
+  const calEnd = toSchoolDateString(cal.endDate, timeZone)
+  if (!calStart || !calEnd) {
+    return {
+      valid: false,
+      error: `Academic calendar ${cal.academicYear ?? ''} has invalid start or end dates`,
+    }
+  }
 
   if (dateStr < calStart || dateStr > calEnd) {
     return {
@@ -134,16 +126,45 @@ export async function validateAttendanceDate(
     }
   }
 
-  // ── 4. Holiday check ──────────────────────────────────────────────────────
-  const holidayStrings = cal.holidayDates.map((h) => toEATDateString(h))
+  // ── 4. Term containment ───────────────────────────────────────────────────
+  const terms = await AcademicTerm.find({ calendarId: cal._id }).lean()
+  const containingTerms = terms
+    .map((term) => {
+      const startDate = toSchoolDateString(term.startDate, timeZone)
+      const endDate = toSchoolDateString(term.endDate, timeZone)
+      return { term, startDate, endDate }
+    })
+    .filter(
+      (entry) =>
+        !!entry.startDate &&
+        !!entry.endDate &&
+        entry.startDate <= dateStr &&
+        dateStr <= entry.endDate
+    )
+    .sort((a, b) => (b.startDate ?? '').localeCompare(a.startDate ?? ''))
+
+  if (containingTerms.length === 0) {
+    return {
+      valid: false,
+      error:
+        terms.length === 0
+          ? `${dateStr} cannot be recorded because no academic term is defined for ${cal.academicYear}`
+          : `${dateStr} falls between academic terms for ${cal.academicYear}; attendance can only be recorded on a term date`,
+    }
+  }
+  const term = containingTerms[0].term
+
+  // ── 5. Holiday check ──────────────────────────────────────────────────────
+  const holidayStrings = (cal.holidayDates ?? [])
+    .map((holiday: any) => toSchoolDateString(holiday, timeZone))
+    .filter((value: string | null): value is string => !!value)
   if (holidayStrings.includes(dateStr)) {
     return { valid: false, error: `${dateStr} is a holiday – attendance cannot be recorded` }
   }
 
-  // ── 5. Working day ────────────────────────────────────────────────────────
-  // dateObj was built at UTC noon; its UTC day-of-week is correct for the
-  // Addis Ababa date (UTC+3 means UTC noon is 3 PM local – same calendar day).
-  const dayOfWeek = dateObj.getUTCDay()
+  // ── 6. Working day ────────────────────────────────────────────────────────
+  const [yr, mo, dy] = dateStr.split('-').map(Number)
+  const dayOfWeek = new Date(Date.UTC(yr, mo - 1, dy, 12, 0, 0)).getUTCDay()
   const workingDays = await getWorkingDays()
   if (!workingDays.has(dayOfWeek)) {
     const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][
@@ -160,5 +181,6 @@ export async function validateAttendanceDate(
       endDate: cal.endDate,
       holidayDates: cal.holidayDates,
     },
+    term,
   }
 }

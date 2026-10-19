@@ -31,6 +31,9 @@ export interface IAttendance extends Document {
   /** Denormalised school year (same format as enrollment.schoolYear). */
   schoolYear: string
 
+  /** Term whose dates contain `date`. Optional for legacy rows. */
+  academicTermId?: Types.ObjectId | null
+
   createdAt: Date
   updatedAt: Date
 }

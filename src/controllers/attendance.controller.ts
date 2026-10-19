@@ -30,14 +30,13 @@ import { StudentEnrollment } from '../models/studentEnrollment.model.js'
 import { Section } from '../models/section.model.js'
 import { TeachingAssignment } from '../models/teachingAssignment.model.js'
 import { AcademicTerm } from '../models/academicTerm.model.js'
+import { AcademicCalendar } from '../models/academicCalendar.model.js'
 import { sendResponse } from '../utils/sendResponse.util.js'
 import { logAudit } from '../utils/auditLogger.util.js'
 import { queues } from '../redis/queueManager.js'
-import {
-  validateAttendanceDate,
-  todayEAT,
-} from '../service/attendanceDateValidator.js'
-import { getYearVariants, normalizeYear } from '../utils/yearNormalizer.js'
+import { validateAttendanceDate } from '../service/attendanceDateValidator.js'
+import { getYearVariants, normalizeYear, yearsMatch } from '../utils/yearNormalizer.js'
+import { toSchoolDateString } from '../utils/schoolDate.util.js'
 import { AttendanceStatus } from '../types/attendance.type.js'
 
 // ── Constant: correction window for homeroom teachers ────────────────────────
@@ -289,6 +288,7 @@ export const upsertSectionAttendance = async (
     return
   }
   const schoolYear = normalizeYear(dateCheck.calendar!.academicYear)
+  const academicTermId = dateCheck.term?._id ?? null
 
   // ── Parse body ─────────────────────────────────────────────────────────────
   const { records } = (req.body ?? {}) as { records?: SubmissionRecord[] }
@@ -437,6 +437,7 @@ export const upsertSectionAttendance = async (
       markedBy,
       sectionId: enrollment.sectionId,
       schoolYear,
+      academicTermId,
     },
   })
 
@@ -474,6 +475,7 @@ export const upsertSectionAttendance = async (
         note: rec.note ?? '',
         markedBy,
         schoolYear,
+        academicTermId,
       })
       if (rec.status === 'absent') {
         await enqueueAbsenceNotification(newRecord._id.toString(), pw.enrollment, date)
@@ -828,8 +830,23 @@ export const getStudentAttendanceSummary = async (
       }
     }
 
+    const enrollment = await StudentEnrollment.findOne({ studentId, isActive: true })
+      .select('schoolYear')
+      .lean()
+    const expectedSchoolYear = schoolYear || enrollment?.schoolYear
+
+    let term: any = null
+    if (termId) {
+      const resolved = await resolveSummaryTerm(termId, expectedSchoolYear)
+      if (resolved.error) {
+        sendResponse(res, resolved.error.status, false, resolved.error.message)
+        return
+      }
+      term = resolved.term
+    }
+
     const filter: any = { studentId }
-    await applyDateRangeFilter(filter, schoolYear, termId, from, to)
+    applyDateRangeFilter(filter, schoolYear, term, from, to)
 
     const summary = await buildSummary(filter)
     sendResponse(res, 200, true, 'Student attendance summary fetched', { studentId, ...summary })
@@ -873,8 +890,24 @@ export const getSectionAttendanceSummary = async (
       }
     }
 
+    const section = await Section.findById(sectionId).select('schoolYear').lean()
+    if (!section) {
+      sendResponse(res, 404, false, 'Section not found')
+      return
+    }
+
+    let term: any = null
+    if (termId) {
+      const resolved = await resolveSummaryTerm(termId, section.schoolYear)
+      if (resolved.error) {
+        sendResponse(res, resolved.error.status, false, resolved.error.message)
+        return
+      }
+      term = resolved.term
+    }
+
     const baseFilter: any = { sectionId }
-    await applyDateRangeFilter(baseFilter, schoolYear, termId, from, to)
+    applyDateRangeFilter(baseFilter, schoolYear, term, from, to)
 
     // Per-student aggregate
     const agg = await Attendance.aggregate([
@@ -957,30 +990,59 @@ async function buildSummary(filter: any) {
 }
 
 /**
- * Mutates `filter` to add date-range constraints derived from
- * schoolYear / termId / explicit from-to.
- * Priority: termId > from/to > schoolYear.
+ * Validates a term supplied to a summary endpoint. The term must exist, its
+ * calendar must exist, and (when known) its school year must match the
+ * student's/section's school year.
  */
-async function applyDateRangeFilter(
+async function resolveSummaryTerm(
+  termId: string,
+  expectedSchoolYear?: string
+): Promise<{ term?: any; error?: { status: number; message: string } }> {
+  if (!mongoose.isValidObjectId(termId)) {
+    return { error: { status: 400, message: 'Invalid termId' } }
+  }
+  const term = await AcademicTerm.findById(termId).lean()
+  if (!term) {
+    return { error: { status: 400, message: 'Academic term not found' } }
+  }
+  const termStart = toSchoolDateString(term.startDate)
+  const termEnd = toSchoolDateString(term.endDate)
+  if (!termStart || !termEnd) {
+    return { error: { status: 400, message: 'Academic term has invalid start or end dates' } }
+  }
+  const calendar = await AcademicCalendar.findById(term.calendarId).lean()
+  if (!calendar) {
+    return { error: { status: 400, message: 'Academic calendar for term not found' } }
+  }
+  if (expectedSchoolYear && !yearsMatch(calendar.academicYear, expectedSchoolYear)) {
+    return {
+      error: {
+        status: 400,
+        message: `Term "${term.name}" belongs to ${calendar.academicYear}, but this section is for ${expectedSchoolYear}`,
+      },
+    }
+  }
+  return { term }
+}
+
+/**
+ * Mutates `filter` to add date-range constraints derived from
+ * schoolYear / a validated term / explicit from-to.
+ * Priority: term > from/to > schoolYear.
+ */
+function applyDateRangeFilter(
   filter: any,
   schoolYear?: string,
-  termId?: string,
+  term?: any,
   from?: string,
   to?: string
-): Promise<void> {
-  if (termId && mongoose.isValidObjectId(termId)) {
-    const term = await AcademicTerm.findById(termId).lean()
-    if (term) {
-      const startStr = term.startDate
-        ? term.startDate.toLocaleDateString('en-CA', { timeZone: 'Africa/Addis_Ababa' })
-        : undefined
-      const endStr = term.endDate
-        ? term.endDate.toLocaleDateString('en-CA', { timeZone: 'Africa/Addis_Ababa' })
-        : undefined
-      if (startStr) filter.date = { ...(filter.date ?? {}), $gte: startStr }
-      if (endStr) filter.date = { ...(filter.date ?? {}), $lte: endStr }
-      return
-    }
+): void {
+  if (term) {
+    const startStr = toSchoolDateString(term.startDate)
+    const endStr = toSchoolDateString(term.endDate)
+    if (startStr) filter.date = { ...(filter.date ?? {}), $gte: startStr }
+    if (endStr) filter.date = { ...(filter.date ?? {}), $lte: endStr }
+    return
   }
 
   if (from || to) {
