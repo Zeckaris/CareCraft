@@ -4,6 +4,7 @@ import { Schedule } from '../models/schedule.model.js'
 import { ScheduleEntry } from '../models/scheduleEntry.model.js'
 import { sendResponse } from '../utils/sendResponse.util.js'
 import { normalizeYear } from '../utils/yearNormalizer.js'
+import { isValidSchoolYear } from '../utils/schoolYear.util.js'
 import { buildDayPeriodTimes, type PeriodTime } from '../utils/scheduleLessons.util.js'
 import { ALL_SCHEDULE_DAYS, type ScheduleDay } from '../utils/scheduleSetting.util.js'
 import { collectScheduleData } from '../service/scheduleData.service.js'
@@ -116,6 +117,15 @@ export const listSchedules = async (req: Request, res: Response): Promise<void> 
     return
   }
   try {
+    if (!(await isValidSchoolYear(schoolYear))) {
+      sendResponse(
+        res,
+        400,
+        false,
+        `schoolYear "${schoolYear}" does not match any academic calendar`
+      )
+      return
+    }
     const canonicalYear = normalizeYear(schoolYear)
     const [schedules, fp] = await Promise.all([
       Schedule.find({ schoolYear: canonicalYear }).sort({ createdAt: -1 }).lean(),
@@ -147,6 +157,15 @@ export const getDraftSchedule = async (req: Request, res: Response): Promise<voi
     return
   }
   try {
+    if (!(await isValidSchoolYear(schoolYear))) {
+      sendResponse(
+        res,
+        400,
+        false,
+        `schoolYear "${schoolYear}" does not match any academic calendar`
+      )
+      return
+    }
     const canonicalYear = normalizeYear(schoolYear)
     const schedule = await Schedule.findOne({ schoolYear: canonicalYear, status: 'draft' })
       .sort({ createdAt: -1 })

@@ -8,6 +8,7 @@ import { TeachingAssignment } from '../models/teachingAssignment.model.js'
 import UserAccount from '../models/userAccount.model.js'
 import { sendResponse } from '../utils/sendResponse.util.js'
 import { getYearVariants, normalizeYear } from '../utils/yearNormalizer.js'
+import { isValidSchoolYear } from '../utils/schoolYear.util.js'
 import { pickScheduleSettingData } from '../utils/scheduleSetting.util.js'
 import {
   runSchedulePrecheck,
@@ -30,6 +31,15 @@ export const getSchedulePrecheck = async (req: Request, res: Response): Promise<
   }
 
   try {
+    if (!(await isValidSchoolYear(schoolYear))) {
+      sendResponse(
+        res,
+        400,
+        false,
+        `schoolYear "${schoolYear}" does not match any academic calendar`
+      )
+      return
+    }
     const canonicalYear = normalizeYear(schoolYear)
     const variants = getYearVariants(canonicalYear)
 

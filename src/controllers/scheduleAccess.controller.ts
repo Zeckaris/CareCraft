@@ -22,6 +22,7 @@ import { StudentEnrollment } from '../models/studentEnrollment.model.js'
 import { sendResponse } from '../utils/sendResponse.util.js'
 import { normalizeYear, getYearVariants } from '../utils/yearNormalizer.js'
 import { getTeacherSectionIds } from '../middlewares/access.middleware.js'
+import { isValidSchoolYear } from '../utils/schoolYear.util.js'
 import { AuthRequest } from '../middlewares/auth.middleware.js'
 import {
   ENTRY_SORT,
@@ -90,6 +91,15 @@ export const getPublishedSchedule = async (req: Request, res: Response): Promise
     return
   }
   try {
+    if (!(await isValidSchoolYear(schoolYear))) {
+      sendResponse(
+        res,
+        400,
+        false,
+        `schoolYear "${schoolYear}" does not match any academic calendar`
+      )
+      return
+    }
     const canonicalYear = normalizeYear(schoolYear)
     const schedule = await findPublished(canonicalYear)
     if (!schedule) {
@@ -127,6 +137,15 @@ export const getMySchedule = async (req: AuthRequest, res: Response): Promise<vo
     return
   }
   try {
+    if (!(await isValidSchoolYear(schoolYear))) {
+      sendResponse(
+        res,
+        400,
+        false,
+        `schoolYear "${schoolYear}" does not match any academic calendar`
+      )
+      return
+    }
     const canonicalYear = normalizeYear(schoolYear)
     const schedule = await findPublished(canonicalYear)
     if (!schedule) {
@@ -207,6 +226,15 @@ export const getSectionPublishedSchedule = async (req: AuthRequest, res: Respons
     return
   }
   try {
+    if (!(await isValidSchoolYear(schoolYear))) {
+      sendResponse(
+        res,
+        400,
+        false,
+        `schoolYear "${schoolYear}" does not match any academic calendar`
+      )
+      return
+    }
     const canonicalYear = normalizeYear(schoolYear)
     const allowed = await canReadSection(req, sectionId, canonicalYear)
     if (!allowed) {

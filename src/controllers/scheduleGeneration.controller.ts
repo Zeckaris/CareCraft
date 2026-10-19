@@ -30,12 +30,21 @@ export const generateSchedule = async (req: AuthRequest, res: Response): Promise
   const { schoolYear, seed, iterationBudget, timeBudgetMs, replaceExistingDraft, keepLocked } =
     req.body ?? {}
 
-  if (!schoolYear || typeof schoolYear !== 'string' || !isValidSchoolYear(schoolYear)) {
+  if (!schoolYear || typeof schoolYear !== 'string') {
     sendResponse(res, 400, false, 'A valid schoolYear (YYYY-YYYY) is required')
     return
   }
 
   try {
+    if (!(await isValidSchoolYear(schoolYear))) {
+      sendResponse(
+        res,
+        400,
+        false,
+        `schoolYear "${schoolYear}" does not match any academic calendar`
+      )
+      return
+    }
     const canonicalYear = normalizeYear(schoolYear)
 
     const data = await collectScheduleData(canonicalYear)
@@ -172,6 +181,15 @@ export const listGenerationJobs = async (req: Request, res: Response): Promise<v
   }
 
   try {
+    if (!(await isValidSchoolYear(schoolYear))) {
+      sendResponse(
+        res,
+        400,
+        false,
+        `schoolYear "${schoolYear}" does not match any academic calendar`
+      )
+      return
+    }
     const canonicalYear = normalizeYear(schoolYear)
     const limit = clampInt(req.query.limit, 20, 1, 100)
 

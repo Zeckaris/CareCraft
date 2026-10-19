@@ -141,6 +141,16 @@ export const listWeeklyRequirements = async (req: Request, res: Response): Promi
   }
 
   try {
+    if (!(await isValidSchoolYear(schoolYear))) {
+      sendResponse(
+        res,
+        400,
+        false,
+        `schoolYear "${schoolYear}" does not match any academic calendar`
+      )
+      return
+    }
+
     const grade = await Grade.findById(gradeId)
     if (!grade) {
       sendResponse(res, 404, false, 'Grade not found')

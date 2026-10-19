@@ -35,6 +35,15 @@ export const getScheduleSettings = async (req: Request, res: Response): Promise<
   }
 
   try {
+    if (!(await isValidSchoolYear(schoolYear))) {
+      sendResponse(
+        res,
+        400,
+        false,
+        `schoolYear "${schoolYear}" does not match any academic calendar`
+      )
+      return
+    }
     const canonicalYear = normalizeYear(schoolYear)
     const setting = await ScheduleSetting.findOne({
       schoolYear: { $in: getYearVariants(canonicalYear) },
