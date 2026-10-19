@@ -2,12 +2,13 @@ import { Request, Response } from 'express'
 import mongoose from 'mongoose'
 import { Section } from '../models/section.model.js'
 import { Grade } from '../models/grade.model.js'
-import { AcademicCalendar } from '../models/academicCalendar.model.js'
 import { StudentEnrollment } from '../models/studentEnrollment.model.js'
 import { TeachingAssignment } from '../models/teachingAssignment.model.js'
 import { sendResponse } from '../utils/sendResponse.util.js'
 import { getTeacherSectionIds } from '../middlewares/access.middleware.js'
 import { getYearVariants, normalizeYear, yearsMatch } from '../utils/yearNormalizer.js'
+import { getCurrentCalendar } from '../service/currentAcademic.service.js'
+import { AcademicCalendar } from '../models/academicCalendar.model.js'
 import {
   planSectionSizes,
   distributeStudentsRandomly,
@@ -100,6 +101,10 @@ export const createSection = async (req: Request, res: Response): Promise<void> 
 /** GET /api/section
  *  Roles: admin, coordinator, teacher
  *  Query: gradeId, schoolYear, isActive
+ *
+ *  When gradeId is given without schoolYear (e.g. the admin results picker),
+ *  it defaults to the current academic calendar's year. Passing schoolYear
+ *  explicitly still returns that year.
  */
 export const getAllSections = async (req: Request, res: Response): Promise<void> => {
   const { gradeId, schoolYear, isActive, page = 1, limit = 50 } = req.query
@@ -113,7 +118,15 @@ export const getAllSections = async (req: Request, res: Response): Promise<void>
     }
     filter.gradeId = gradeId
   }
-  if (schoolYear) filter.schoolYear = { $in: getYearVariants(schoolYear as string) }
+  if (schoolYear) {
+    filter.schoolYear = { $in: getYearVariants(schoolYear as string) }
+  } else if (gradeId) {
+    // Default to the current academic calendar year for the grade picker.
+    const currentCal = await getCurrentCalendar()
+    if (currentCal?.academicYear) {
+      filter.schoolYear = { $in: getYearVariants(currentCal.academicYear) }
+    }
+  }
   if (isActive !== undefined) filter.isActive = isActive === 'true'
 
   const user = (req as any).user
@@ -375,7 +388,7 @@ export const getMySections = async (req: Request, res: Response): Promise<void> 
   try {
     // Use active calendar year; fall back to all years if none found.
     // Use getYearVariants so "2024-2025" matches sections stored as "2024-25".
-    const activeCal = await AcademicCalendar.findOne({ isCurrent: true })
+    const activeCal = await getCurrentCalendar()
     const schoolYearFilter: any = {}
     if (activeCal) schoolYearFilter.schoolYear = { $in: getYearVariants(activeCal.academicYear) }
 
