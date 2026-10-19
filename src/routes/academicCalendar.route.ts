@@ -2,6 +2,7 @@ import express from 'express';
 import {
   getAllCalendars,
   getCurrentCalendar,
+  getCurrentAcademicContext,
   getCalendarById,
   createCalendar,
   updateCalendar,
@@ -16,6 +17,7 @@ const router = express.Router();
 
 
 router.get('/current', authMiddleware, getCurrentCalendar);
+router.get('/current-context', authMiddleware, getCurrentAcademicContext);
 
 
 router.use(authMiddleware, roleMiddleware('admin', 'coordinator'));
