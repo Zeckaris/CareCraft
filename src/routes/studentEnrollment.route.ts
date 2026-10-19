@@ -12,6 +12,7 @@ import {
   moveEnrollmentSection,
   bulkMoveEnrollmentSections,
   getUnassignedEnrollments,
+  getRegistrationWindows,
 } from '../controllers/studentEnrollment.controller.js'
 import { authMiddleware } from '../middlewares/auth.middleware.js'
 import { roleMiddleware } from '../middlewares/role.middleware.js'
@@ -24,6 +25,7 @@ router.get('/grade/:gradeId', authMiddleware, roleMiddleware('admin', 'coordinat
 
 // Must be defined before /:id routes
 router.get('/unassigned', authMiddleware, roleMiddleware('admin', 'coordinator'), getUnassignedEnrollments)
+router.get('/registration-windows', authMiddleware, roleMiddleware('admin', 'coordinator'), getRegistrationWindows)
 
 // Bulk move must be defined before /:id routes
 router.post('/bulk-move-section', authMiddleware, roleMiddleware('admin', 'coordinator'), bulkMoveEnrollmentSections)

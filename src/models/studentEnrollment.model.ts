@@ -12,7 +12,17 @@ const studentEnrollmentSchema = new Schema<IStudentEnrollment>(
       trim: true,
       match: [/^\d{4}-\d{4}$/, 'School year must be in format YYYY-YYYY (e.g., 2024-2025)'],
     },
-    isActive: { type: Boolean, default: true }
+    isActive: { type: Boolean, default: true },
+    /** Set only when an admin bypasses the registration window. */
+    registrationWindowOverride: {
+      type: {
+        reason: { type: String, required: true },
+        by: { type: Schema.Types.ObjectId, ref: 'UserAccount', required: true },
+        at: { type: Date, required: true },
+      },
+      default: null,
+      _id: false,
+    },
   },
   {
     timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },

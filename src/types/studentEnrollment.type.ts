@@ -8,6 +8,11 @@ export interface IStudentEnrollment extends Document {
   sectionName?: string               // virtual additive field when sectionId is populated
   schoolYear: string
   isActive: boolean
+  registrationWindowOverride?: {
+    reason: string
+    by: Types.ObjectId
+    at: Date
+  } | null
   createdAt: Date
   updatedAt: Date
 }

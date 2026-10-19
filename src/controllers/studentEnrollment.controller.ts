@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import mongoose, { Types } from 'mongoose';
 import { StudentEnrollment } from '../models/studentEnrollment.model.js';
 import { Student } from '../models/student.model.js';
-import { AcademicCalendar } from '../models/academicCalendar.model.js';
 import { Section } from '../models/section.model.js';
 import { Grade } from '../models/grade.model.js';
 import { sendResponse } from '../utils/sendResponse.util.js';
@@ -13,20 +12,51 @@ import {
   getTeacherSectionIds,
 } from '../middlewares/access.middleware.js';
 import { yearsMatch, getYearVariants, normalizeYear } from '../utils/yearNormalizer.js';
+import {
+  getOpenRegistrationCalendarWindows,
+  resolveRegistrationTarget,
+} from '../service/registrationWindow.service.js';
 
-const getCurrentActiveCalendar = async () => {
-  return await AcademicCalendar.findOne({ isCurrent: true });
-};
+interface RegistrationOverride {
+  reason: string;
+  by: Types.ObjectId;
+  at: Date;
+}
 
-const formatDate = (date: Date | string | undefined): string => {
-  if (!date) return 'N/A';
-  const d = new Date(date);
-  return d.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-};
+function parseRegistrationOverride(
+  req: AuthRequest,
+  body: any
+):
+  | { ok: true; override: boolean; record: RegistrationOverride | null }
+  | { ok: false; status: 400 | 403; message: string } {
+  if (body?.overrideRegistrationWindow !== true) {
+    return { ok: true, override: false, record: null };
+  }
+  if (req.user?.role !== 'admin') {
+    return {
+      ok: false,
+      status: 403,
+      message: 'Only an admin can override the registration window.',
+    };
+  }
+  const reason = typeof body?.overrideReason === 'string' ? body.overrideReason.trim() : '';
+  if (!reason) {
+    return {
+      ok: false,
+      status: 400,
+      message: 'overrideReason is required when overrideRegistrationWindow is true.',
+    };
+  }
+  return {
+    ok: true,
+    override: true,
+    record: {
+      reason,
+      by: new Types.ObjectId(String(req.user.id)),
+      at: new Date(),
+    },
+  };
+}
 
 /**
  * Resolves the sectionId for an enrollment.
@@ -241,41 +271,39 @@ export const getEnrollmentById = async (req: AuthRequest, res: Response): Promis
   }
 };
 
-export const createEnrollment = async (req: Request, res: Response): Promise<void> => {
-  const { studentId, gradeId, sectionId } = req.body;
+export const createEnrollment = async (req: AuthRequest, res: Response): Promise<void> => {
+  const body = req.body ?? {};
+  const { studentId, gradeId, sectionId, schoolYear: requestedYear } = body;
 
   if (!mongoose.isValidObjectId(studentId) || !mongoose.isValidObjectId(gradeId)) {
     sendResponse(res, 400, false, 'Invalid studentId or gradeId');
     return;
   }
 
+  const override = parseRegistrationOverride(req, body);
+  if (!override.ok) {
+    sendResponse(res, override.status, false, override.message);
+    return;
+  }
+
   try {
-    const currentCalendar = await getCurrentActiveCalendar();
-    if (!currentCalendar) {
-      sendResponse(res, 400, false, 'No active academic calendar found. Please set one first.');
+    const student = await Student.findById(studentId);
+    if (!student) {
+      sendResponse(res, 404, false, 'Student not found.');
       return;
     }
 
-    const schoolYear = normalizeYear(currentCalendar.academicYear);
-
-    const today = new Date();
-    const regStart = currentCalendar.registrationStartDate;
-    const newRegEnd = currentCalendar.newStudentRegistrationEndDate;
-
-    if (
-      (regStart && today < new Date(regStart)) ||
-      (newRegEnd && today > new Date(newRegEnd))
-    ) {
-      sendResponse(
-        res,
-        403,
-        false,
-        `Enrollment period is closed. Current window: ${
-          regStart ? formatDate(regStart) : 'N/A'
-        } to ${newRegEnd ? formatDate(newRegEnd) : 'N/A'}`
-      );
+    const registration = await resolveRegistrationTarget({
+      studentId,
+      requestedYear,
+      override: override.override,
+    });
+    if (!registration.ok) {
+      sendResponse(res, registration.status, false, registration.message);
       return;
     }
+
+    const schoolYear = registration.schoolYear;
 
     const existing = await StudentEnrollment.findOne({
       studentId,
@@ -284,12 +312,6 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
     });
     if (existing) {
       sendResponse(res, 400, false, `Student already has active enrollment for ${schoolYear}`);
-      return;
-    }
-
-    const student = await Student.findById(studentId);
-    if (!student) {
-      sendResponse(res, 404, false, 'Student not found.');
       return;
     }
 
@@ -316,6 +338,8 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
       sectionId: resolvedSectionId ?? null,
       schoolYear,
       isActive: true,
+      registrationWindowOverride:
+        registration.isOverride && override.record ? override.record : null,
     });
     await Student.findByIdAndUpdate(studentId, { enrollmentId: enrollment._id });
 
@@ -330,9 +354,10 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
   }
 };
 
-export const updateEnrollment = async (req: Request, res: Response): Promise<void> => {
+export const updateEnrollment = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { gradeId, schoolYear: providedYear, isActive, sectionId } = req.body;
+  const body = req.body ?? {};
+  const { gradeId, schoolYear: providedYear, isActive, sectionId } = body;
 
   if (!mongoose.isValidObjectId(id)) {
     sendResponse(res, 400, false, 'Invalid enrollment ID');
@@ -343,11 +368,44 @@ export const updateEnrollment = async (req: Request, res: Response): Promise<voi
     return;
   }
 
+  const override = parseRegistrationOverride(req, body);
+  if (!override.ok) {
+    sendResponse(res, override.status, false, override.message);
+    return;
+  }
+
   try {
     const enrollment = await StudentEnrollment.findById(id);
     if (!enrollment) {
       sendResponse(res, 404, false, 'Enrollment not found.');
       return;
+    }
+
+    const targetGradeId = gradeId || enrollment.gradeId;
+    const targetSchoolYear = providedYear
+      ? normalizeYear(providedYear)
+      : enrollment.schoolYear;
+
+    const changingYear = !!providedYear && !yearsMatch(targetSchoolYear, enrollment.schoolYear);
+    const changingGrade =
+      !!gradeId && String(gradeId) !== String(enrollment.gradeId);
+    const reactivating = isActive === true && !enrollment.isActive;
+    const needsRegistrationGate = changingYear || changingGrade || reactivating;
+
+    let overrideRecord: RegistrationOverride | null = null;
+    if (needsRegistrationGate) {
+      const registration = await resolveRegistrationTarget({
+        studentId: enrollment.studentId,
+        requestedYear: targetSchoolYear,
+        override: override.override,
+      });
+      if (!registration.ok) {
+        sendResponse(res, registration.status, false, registration.message);
+        return;
+      }
+      if (registration.isOverride && override.record) {
+        overrideRecord = override.record;
+      }
     }
 
     if (isActive !== undefined && isActive !== enrollment.isActive && isActive) {
@@ -357,15 +415,11 @@ export const updateEnrollment = async (req: Request, res: Response): Promise<voi
       );
     }
 
-    const targetGradeId = gradeId || enrollment.gradeId;
-    const targetSchoolYear = providedYear
-      ? normalizeYear(providedYear)
-      : enrollment.schoolYear;
-
     const updateData: any = {};
     if (gradeId) updateData.gradeId = gradeId;
     if (providedYear) updateData.schoolYear = targetSchoolYear;
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (overrideRecord) updateData.registrationWindowOverride = overrideRecord;
 
     if (sectionId !== undefined) {
       if (sectionId === null) {
@@ -395,11 +449,17 @@ export const updateEnrollment = async (req: Request, res: Response): Promise<voi
   }
 };
 
-export const toggleEnrollmentActive = async (req: Request, res: Response): Promise<void> => {
+export const toggleEnrollmentActive = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
     sendResponse(res, 400, false, 'Invalid enrollment ID');
+    return;
+  }
+
+  const override = parseRegistrationOverride(req, req.body ?? {});
+  if (!override.ok) {
+    sendResponse(res, override.status, false, override.message);
     return;
   }
 
@@ -411,16 +471,34 @@ export const toggleEnrollmentActive = async (req: Request, res: Response): Promi
     }
 
     const newStatus = !enrollment.isActive;
+    let overrideRecord: RegistrationOverride | null = null;
+
     if (newStatus) {
+      const registration = await resolveRegistrationTarget({
+        studentId: enrollment.studentId,
+        requestedYear: enrollment.schoolYear,
+        override: override.override,
+      });
+      if (!registration.ok) {
+        sendResponse(res, registration.status, false, registration.message);
+        return;
+      }
+      if (registration.isOverride && override.record) {
+        overrideRecord = override.record;
+      }
+
       await StudentEnrollment.updateMany(
         { studentId: enrollment.studentId, _id: { $ne: id }, isActive: true },
         { isActive: false }
       );
     }
 
+    const update: any = { isActive: newStatus };
+    if (overrideRecord) update.registrationWindowOverride = overrideRecord;
+
     const updated = await StudentEnrollment.findByIdAndUpdate(
       id,
-      { isActive: newStatus },
+      update,
       { new: true }
     )
       .populate('studentId', 'firstName middleName lastName profileImage')
@@ -518,56 +596,25 @@ export const getGradeEnrollments = async (req: AuthRequest, res: Response): Prom
   }
 };
 
-export const bulkCreateEnrollments = async (req: Request, res: Response): Promise<void> => {
-  const { studentIds, gradeId, sectionId } = req.body;
+export const bulkCreateEnrollments = async (req: AuthRequest, res: Response): Promise<void> => {
+  const body = req.body ?? {};
+  const { studentIds, gradeId, sectionId, schoolYear: requestedYear } = body;
 
   if (!Array.isArray(studentIds) || !mongoose.isValidObjectId(gradeId)) {
     sendResponse(res, 400, false, 'Invalid studentIds array or gradeId');
     return;
   }
 
+  const override = parseRegistrationOverride(req, body);
+  if (!override.ok) {
+    sendResponse(res, override.status, false, override.message);
+    return;
+  }
+
   try {
-    const currentCalendar = await getCurrentActiveCalendar();
-    if (!currentCalendar) {
-      sendResponse(res, 400, false, 'No active academic calendar found. Please set one first.');
-      return;
-    }
-
-    const schoolYear = normalizeYear(currentCalendar.academicYear);
-
-    const today = new Date();
-    const regStart = currentCalendar.registrationStartDate;
-    const newRegEnd = currentCalendar.newStudentRegistrationEndDate;
-
-    if (
-      (regStart && today < new Date(regStart)) ||
-      (newRegEnd && today > new Date(newRegEnd))
-    ) {
-      sendResponse(
-        res,
-        403,
-        false,
-        `Enrollment period is closed. Current window: ${
-          regStart ? formatDate(regStart) : 'N/A'
-        } to ${newRegEnd ? formatDate(newRegEnd) : 'N/A'}`
-      );
-      return;
-    }
-
     const grade = await Grade.findById(gradeId);
     if (!grade) {
       sendResponse(res, 404, false, 'Grade not found.');
-      return;
-    }
-
-    // Resolve section for the bulk batch (optional; validated only when supplied explicitly)
-    const { sectionId: resolvedSectionId, error: sectionErr } = await resolveSectionForEnrollment(
-      gradeId,
-      schoolYear,
-      sectionId
-    );
-    if (sectionErr) {
-      sendResponse(res, 400, false, sectionErr);
       return;
     }
 
@@ -575,43 +622,56 @@ export const bulkCreateEnrollments = async (req: Request, res: Response): Promis
     let successCount = 0;
     const errors: string[] = [];
 
-    for (let i = 0; i < validStudentIds.length; i += 50) {
-      const batch = validStudentIds.slice(i, i + 50);
-      const batchPromises = batch.map(async (studentId: string) => {
-        try {
-          const existing = await StudentEnrollment.findOne({
-            studentId,
-            schoolYear: { $in: getYearVariants(schoolYear) },
-            isActive: true,
-          });
-          if (existing) {
-            errors.push(`Student ${studentId} already enrolled`);
-            return null;
-          }
-
-          const student = await Student.findById(studentId);
-          if (!student) {
-            errors.push(`Student ${studentId} not found`);
-            return null;
-          }
-
-          const enrollment = await StudentEnrollment.create({
-            studentId,
-            gradeId,
-            sectionId: resolvedSectionId ?? null,
-            schoolYear,
-            isActive: true,
-          });
-          await Student.findByIdAndUpdate(studentId, { enrollmentId: enrollment._id });
-          return enrollment;
-        } catch (err: any) {
-          errors.push(`Student ${studentId}: ${err.message}`);
-          return null;
+    for (const studentId of validStudentIds) {
+      try {
+        const student = await Student.findById(studentId);
+        if (!student) {
+          errors.push(`Student ${studentId} not found`);
+          continue;
         }
-      });
 
-      const results = await Promise.all(batchPromises);
-      successCount += results.filter(Boolean).length;
+        const registration = await resolveRegistrationTarget({
+          studentId,
+          requestedYear,
+          override: override.override,
+        });
+        if (!registration.ok) {
+          errors.push(`Student ${studentId}: ${registration.message}`);
+          continue;
+        }
+
+        const schoolYear = registration.schoolYear;
+        const existing = await StudentEnrollment.findOne({
+          studentId,
+          schoolYear: { $in: getYearVariants(schoolYear) },
+          isActive: true,
+        });
+        if (existing) {
+          errors.push(`Student ${studentId} already enrolled`);
+          continue;
+        }
+
+        const { sectionId: resolvedSectionId, error: sectionErr } =
+          await resolveSectionForEnrollment(gradeId, schoolYear, sectionId);
+        if (sectionErr) {
+          errors.push(`Student ${studentId}: ${sectionErr}`);
+          continue;
+        }
+
+        const enrollment = await StudentEnrollment.create({
+          studentId,
+          gradeId,
+          sectionId: resolvedSectionId ?? null,
+          schoolYear,
+          isActive: true,
+          registrationWindowOverride:
+            registration.isOverride && override.record ? override.record : null,
+        });
+        await Student.findByIdAndUpdate(studentId, { enrollmentId: enrollment._id });
+        successCount++;
+      } catch (err: any) {
+        errors.push(`Student ${studentId}: ${err.message}`);
+      }
     }
 
     sendResponse(res, 201, true, `Bulk enrollment completed: ${successCount} successful`, {
@@ -622,6 +682,19 @@ export const bulkCreateEnrollments = async (req: Request, res: Response): Promis
     });
   } catch (error) {
     sendResponse(res, 500, false, 'Server error in bulk enrollment.', null, error);
+  }
+};
+
+/**
+ * GET /api/enrollment/registration-windows
+ * Returns both registration windows for every calendar that has not ended.
+ */
+export const getRegistrationWindows = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const data = await getOpenRegistrationCalendarWindows();
+    sendResponse(res, 200, true, 'Registration windows fetched successfully', data);
+  } catch (error) {
+    sendResponse(res, 500, false, 'Server error fetching registration windows.', null, error);
   }
 };
 
