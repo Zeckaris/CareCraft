@@ -1,22 +1,78 @@
-import { Request, Response } from "express";
+import { Response } from "express";
 import mongoose from "mongoose";
 import { ConductedAssessment } from '../models/ConductedAssessment.model.js';
 import { sendResponse } from '../utils/sendResponse.util.js';
 import { AcademicTerm } from '../models/academicTerm.model.js';
-import { GradeSubjectAssessment } from '../models/gradeSubjectAssessment.model.js';
+import { AcademicCalendar } from '../models/academicCalendar.model.js';
 import { Section } from '../models/section.model.js';
-import { AssessmentSetup } from '../models/assessment/assessmentSetup.model.js';
-import { TeachingAssignment } from '../models/teachingAssignment.model.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { getTeacherSectionIds } from '../middlewares/access.middleware.js';
+import { getCurrentTerm } from '../service/currentAcademic.service.js';
+import { yearsMatch } from '../utils/yearNormalizer.js';
+
+/**
+ * Read-only conducted-assessment endpoints.
+ *
+ * Stage conduct / complete / reopen now live on the assessment-scores router
+ * (POST /api/assessment/scores/conduct|complete|reopen) so that all stage and
+ * score mutations share one authorization path and one lock model.
+ */
 
 export const getAllConducted = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { gsaId, academicTermId, sectionId } = req.query;
     const filter: any = {};
 
-    if (gsaId && mongoose.isValidObjectId(gsaId)) filter.gsaId = gsaId;
-    if (academicTermId && mongoose.isValidObjectId(academicTermId)) filter.academicTermId = academicTermId;
+    if (gsaId) {
+      if (!mongoose.isValidObjectId(gsaId)) {
+        sendResponse(res, 400, false, 'Invalid gsaId');
+        return;
+      }
+      filter.gsaId = gsaId;
+    }
+
+    let requestedSection: any = null;
+    if (sectionId) {
+      if (!mongoose.isValidObjectId(sectionId)) {
+        sendResponse(res, 400, false, 'Invalid sectionId');
+        return;
+      }
+      requestedSection = await Section.findById(sectionId).select('schoolYear').lean();
+      if (!requestedSection) {
+        sendResponse(res, 404, false, 'Section not found');
+        return;
+      }
+    }
+
+    if (academicTermId) {
+      if (!mongoose.isValidObjectId(academicTermId)) {
+        sendResponse(res, 400, false, 'Invalid academicTermId');
+        return;
+      }
+      const term = await AcademicTerm.findById(academicTermId).lean();
+      if (!term) {
+        sendResponse(res, 400, false, 'Academic term not found');
+        return;
+      }
+      const calendar = await AcademicCalendar.findById(term.calendarId).lean();
+      if (!calendar) {
+        sendResponse(res, 400, false, 'Academic calendar for term not found');
+        return;
+      }
+      if (
+        requestedSection &&
+        !yearsMatch(calendar.academicYear, requestedSection.schoolYear)
+      ) {
+        sendResponse(
+          res,
+          400,
+          false,
+          `Term "${term.name}" belongs to ${calendar.academicYear}, but this section is for ${requestedSection.schoolYear}`
+        );
+        return;
+      }
+      filter.academicTermId = academicTermId;
+    }
 
     const user = req.user;
     if (user?.role === 'teacher') {
@@ -43,6 +99,7 @@ export const getAllConducted = async (req: AuthRequest, res: Response): Promise<
       .populate("academicTermId", "name calendarId")
       .populate("sectionId", "name gradeId schoolYear")
       .populate("conductedStages", "name weight")
+      .populate("lockedStages", "name weight")
       .sort({ "academicTermId.calendarId": -1, "gsaId.gradeId": 1 });
 
     sendResponse(res, 200, true, "All conducted assessments fetched", conducted);
@@ -53,9 +110,14 @@ export const getAllConducted = async (req: AuthRequest, res: Response): Promise<
 
 export const getCurrentTermConducted = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const currentTerm = await AcademicTerm.findOne({ isCurrent: true });
+    const currentTerm = await getCurrentTerm();
     if (!currentTerm) {
-      sendResponse(res, 404, false, "No current term set");
+      sendResponse(
+        res,
+        404,
+        false,
+        "No current academic term is available based on calendar dates"
+      );
       return;
     }
 
@@ -85,7 +147,8 @@ export const getCurrentTermConducted = async (req: AuthRequest, res: Response): 
     const conducted = await ConductedAssessment.find(filter)
       .populate("gsaId", "gradeId subjectId")
       .populate("sectionId", "name gradeId schoolYear")
-      .populate("conductedStages", "name");
+      .populate("conductedStages", "name")
+      .populate("lockedStages", "name");
 
     sendResponse(res, 200, true, "Current term conducted assessments", conducted);
   } catch (error) {
@@ -99,7 +162,8 @@ export const getConductedById = async (req: AuthRequest, res: Response): Promise
       .populate("gsaId")
       .populate("academicTermId")
       .populate("sectionId", "name gradeId schoolYear")
-      .populate("conductedStages");
+      .populate("conductedStages")
+      .populate("lockedStages");
 
     if (!conducted) {
       sendResponse(res, 404, false, "Conducted assessment not found");
@@ -117,158 +181,6 @@ export const getConductedById = async (req: AuthRequest, res: Response): Promise
     }
 
     sendResponse(res, 200, true, "Conducted assessment found", conducted);
-  } catch (error) {
-    sendResponse(res, 500, false, "Server error", null, error);
-  }
-};
-
-export const createConducted = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { gsaId, academicTermId, sectionId } = req.body;
-    if (!gsaId || !academicTermId || !sectionId) {
-      sendResponse(res, 400, false, "gsaId, academicTermId, and sectionId are required");
-      return;
-    }
-
-    if (!mongoose.isValidObjectId(gsaId) || !mongoose.isValidObjectId(academicTermId) || !mongoose.isValidObjectId(sectionId)) {
-      sendResponse(res, 400, false, "Invalid ID format in request body");
-      return;
-    }
-
-    const [gsa, section] = await Promise.all([
-      GradeSubjectAssessment.findById(gsaId),
-      Section.findById(sectionId),
-    ]);
-
-    if (!gsa) {
-      sendResponse(res, 404, false, "GradeSubjectAssessment not found");
-      return;
-    }
-    if (!section) {
-      sendResponse(res, 404, false, "Section not found");
-      return;
-    }
-    if (section.gradeId.toString() !== gsa.gradeId.toString()) {
-      sendResponse(res, 400, false, "Section does not belong to this assessment's grade");
-      return;
-    }
-
-    const exists = await ConductedAssessment.findOne({ gsaId, academicTermId, sectionId });
-    if (exists) {
-      sendResponse(res, 400, false, "Already exists for this GSA, Term, and Section");
-      return;
-    }
-
-    const conducted = await ConductedAssessment.create({
-      gsaId,
-      academicTermId,
-      sectionId,
-      conductedStages: [],
-      status: "planned",
-    });
-
-    sendResponse(res, 201, true, "Conducted assessment created", conducted);
-  } catch (error: any) {
-    if (error.code === 11000) {
-      sendResponse(res, 400, false, "Already exists for this GSA, Term, and Section");
-      return;
-    }
-    sendResponse(res, 500, false, "Server error", null, error);
-  }
-};
-
-export const markStageConducted = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { assessmentTypeId } = req.body;
-    if (!assessmentTypeId) {
-      sendResponse(res, 400, false, "assessmentTypeId required");
-      return;
-    }
-
-    const conducted = await ConductedAssessment.findById(req.params.id);
-    if (!conducted) {
-      sendResponse(res, 404, false, "Conducted assessment not found");
-      return;
-    }
-
-    const gsa = await GradeSubjectAssessment.findById(conducted.gsaId);
-    if (!gsa) {
-      sendResponse(res, 404, false, "Associated GradeSubjectAssessment not found");
-      return;
-    }
-
-    const user = req.user;
-    if (user?.role === 'teacher') {
-      const assignment = await TeachingAssignment.findOne({
-        teacherId: user.id,
-        sectionId: conducted.sectionId,
-        role: 'subject',
-        subjectId: gsa.subjectId,
-      });
-      if (!assignment) {
-        sendResponse(res, 403, false, "Forbidden: You are not the assigned subject teacher for this section");
-        return;
-      }
-    }
-
-    const setup = await AssessmentSetup.findById(gsa.assessmentSetupId).populate('assessmentTypeIds');
-    if (!setup) {
-      sendResponse(res, 404, false, "Assessment setup not found");
-      return;
-    }
-
-    const populatedTypes = setup.assessmentTypeIds as any[];
-    const typeIndex = populatedTypes.findIndex((t: any) => t._id.equals(assessmentTypeId));
-    if (typeIndex === -1) {
-      sendResponse(res, 400, false, "Invalid assessment type for this assessment setup");
-      return;
-    }
-
-    // Stage order enforcement: no skipping stages
-    if (typeIndex > conducted.conductedStages.length) {
-      const nextExpected = populatedTypes[conducted.conductedStages.length];
-      const currentAttempt = populatedTypes[typeIndex];
-      sendResponse(
-        res,
-        400,
-        false,
-        `Complete "${nextExpected.name}" before "${currentAttempt.name}"`
-      );
-      return;
-    }
-
-    if (!conducted.conductedStages.some((id: any) => id.equals(assessmentTypeId))) {
-      conducted.conductedStages.push(assessmentTypeId);
-      conducted.status = conducted.conductedStages.length === populatedTypes.length ? "completed" : "in-progress";
-      await conducted.save();
-    }
-
-    await conducted.populate("conductedStages", "name");
-    sendResponse(res, 200, true, "Stage marked as conducted", conducted);
-  } catch (error) {
-    sendResponse(res, 500, false, "Server error", null, error);
-  }
-};
-
-export const updateStatus = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { status } = req.body;
-    if (!["planned", "in-progress", "completed"].includes(status)) {
-      sendResponse(res, 400, false, "Invalid status");
-      return;
-    }
-
-    const conducted = await ConductedAssessment.findByIdAndUpdate(
-      req.params.id,
-      { status },
-      { new: true }
-    );
-    if (!conducted) {
-      sendResponse(res, 404, false, "Not found");
-      return;
-    }
-
-    sendResponse(res, 200, true, "Status updated", conducted);
   } catch (error) {
     sendResponse(res, 500, false, "Server error", null, error);
   }

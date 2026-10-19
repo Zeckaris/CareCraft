@@ -26,6 +26,13 @@ const conductedAssessmentSchema = new Schema<IConductedAssessment>(
         ref: 'AssessmentType',
       },
     ],
+    /** Stages whose scores are locked (completed). Always a subset of conductedStages. */
+    lockedStages: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'AssessmentType',
+      },
+    ],
     status: {
       type: String,
       enum: ['planned', 'in-progress', 'completed'],
@@ -44,4 +51,4 @@ conductedAssessmentSchema.index(
 export const ConductedAssessment = model<IConductedAssessment>(
   'ConductedAssessment',
   conductedAssessmentSchema
-);
+);

@@ -1,9 +1,9 @@
 import { Request, Response } from "express"
 import { AssessmentSetup } from '../../models/assessment/assessmentSetup.model.js'
 import { AssessmentType } from '../../models/assessment/assessmentType.model.js'
-import { AssessmentScore } from '../../models/assessment/assessmentScore.model.js'
 import { GradeSubjectAssessment } from '../../models/gradeSubjectAssessment.model.js'
 import { sendResponse } from '../../utils/sendResponse.util.js'
+import { recalcMarksheetsForSetups } from '../../service/assessmentScore.service.js'
 
 export const createAssessmentSetup = async (req: Request, res: Response): Promise<void> => {
     const { name, description, assessmentTypeIds } = req.body
@@ -138,6 +138,12 @@ export const updateAssessmentSetup = async (req: Request, res: Response): Promis
         setup.description = description || setup.description
         await setup.save()
 
+        // A change to the setup's types/weights changes every linked marksheet's
+        // totals and average. Recompute them (and prune removed types).
+        if (assessmentTypeIds && Array.isArray(assessmentTypeIds)) {
+            await recalcMarksheetsForSetups([id])
+        }
+
         const populatedSetup = await AssessmentSetup.findById(id)
             .populate('assessmentTypeIds', 'name weight description')
 
@@ -158,20 +164,14 @@ export const deleteAssessmentSetup = async (req: Request, res: Response): Promis
   }
 
   try {
-    const usedInScore = await AssessmentScore.findOne({ assessmentSetupId: id });
+    // Marksheets no longer store a setup id; a setup is referenced only via GSA.
     const usedInGSA = await GradeSubjectAssessment.findOne({ assessmentSetupId: id });
 
-    if (usedInScore || usedInGSA) {
-      const scoreCount = usedInScore ? await AssessmentScore.countDocuments({ assessmentSetupId: id }) : 0;
-      const gsaCount = usedInGSA ? await GradeSubjectAssessment.countDocuments({ assessmentSetupId: id }) : 0;
+    if (usedInGSA) {
+      const gsaCount = await GradeSubjectAssessment.countDocuments({ assessmentSetupId: id });
 
-      const blockers: string[] = [];
-      if (scoreCount > 0) blockers.push(`${scoreCount} assessment score(s)`);
-      if (gsaCount > 0) blockers.push(`${gsaCount} grade subject assessment(s)`);
-
-      sendResponse(res, 400, false, `Cannot delete assessment setup: still referenced by ${blockers.join(", ")}. Remove those records first.`, {
+      sendResponse(res, 400, false, `Cannot delete assessment setup: still referenced by ${gsaCount} grade subject assessment(s). Remove those records first.`, {
         references: {
-          assessmentScoreId: usedInScore?._id || null,
           gradeSubjectAssessmentId: usedInGSA?._id || null,
         }
       });

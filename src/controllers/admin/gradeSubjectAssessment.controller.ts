@@ -1,9 +1,11 @@
 import { Request, Response } from "express"
+import mongoose from "mongoose"
 import { GradeSubjectAssessment } from '../../models/gradeSubjectAssessment.model.js'
 import { AssessmentSetup } from '../../models/assessment/assessmentSetup.model.js'
 import { Subject } from '../../models/subject.model.js'
 import { Grade } from '../../models/grade.model.js'
 import { sendResponse } from '../../utils/sendResponse.util.js'
+import { recalcMarksheetsForGsa } from '../../service/assessmentScore.service.js'
 
 
 
@@ -77,8 +79,19 @@ export const getAllGradeSubjectAssessments = async (req: Request, res: Response)
         limit = Math.min(limit, 50)
         const skip = (page - 1) * limit
 
-        const total = await GradeSubjectAssessment.countDocuments()
-        const gsas = await GradeSubjectAssessment.find()
+        // Optional grade filter, e.g. for the admin results subject picker.
+        const filter: any = {}
+        const gradeId = req.query.gradeId as string | undefined
+        if (gradeId) {
+            if (!mongoose.isValidObjectId(gradeId)) {
+                sendResponse(res, 400, false, "Invalid gradeId")
+                return
+            }
+            filter.gradeId = gradeId
+        }
+
+        const total = await GradeSubjectAssessment.countDocuments(filter)
+        const gsas = await GradeSubjectAssessment.find(filter)
             .populate('gradeId', 'level description')
             .populate('subjectId', 'name description')
             .populate('assessmentSetupId', 'name description')
@@ -193,9 +206,16 @@ export const updateGradeSubjectAssessment = async (req: Request, res: Response):
 
         gsa.gradeId = gradeId || gsa.gradeId
         gsa.subjectId = subjectId || gsa.subjectId
+        const setupChanged =
+            !!assessmentSetupId && String(assessmentSetupId) !== String(gsa.assessmentSetupId)
         gsa.assessmentSetupId = assessmentSetupId || gsa.assessmentSetupId
         
         await gsa.save()
+
+        // Recompute marksheets when the setup this GSA points at changes.
+        if (setupChanged) {
+            await recalcMarksheetsForGsa(id)
+        }
 
         const populated = await GradeSubjectAssessment.findById(id)
             .populate('gradeId', 'level description')
