@@ -2,6 +2,7 @@ import { Document, Types } from "mongoose";
 
 export interface ISchoolFeatures {
   attributeEvaluation: boolean;
+  observations: boolean;
 }
 
 export interface ISchoolInfo extends Document {

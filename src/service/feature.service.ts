@@ -5,11 +5,13 @@ export type SchoolFeature = keyof ISchoolFeatures
 
 const DEFAULT_FEATURES: ISchoolFeatures = {
   attributeEvaluation: false,
+  observations: false,
 }
 
 export function normalizeFeatures(features: Partial<ISchoolFeatures> | null | undefined): ISchoolFeatures {
   return {
     attributeEvaluation: features?.attributeEvaluation === true,
+    observations: features?.observations === true,
   }
 }
 

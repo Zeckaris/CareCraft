@@ -426,7 +426,7 @@ export const updateBranding = async (req: Request, res: Response): Promise<void>
   }
 };
 
-const FEATURE_KEYS = ['attributeEvaluation'] as const;
+const FEATURE_KEYS = ['attributeEvaluation', 'observations'] as const;
 type FeatureKey = (typeof FEATURE_KEYS)[number];
 
 export const updateSchoolFeatures = async (req: Request, res: Response): Promise<void> => {
@@ -458,6 +458,14 @@ export const updateSchoolFeatures = async (req: Request, res: Response): Promise
         return;
       }
       updates.attributeEvaluation = body.attributeEvaluation;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "observations")) {
+      if (typeof body.observations !== "boolean") {
+        sendResponse(res, 400, false, "observations must be a boolean");
+        return;
+      }
+      updates.observations = body.observations;
     }
 
     if (Object.keys(updates).length === 0) {

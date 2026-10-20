@@ -6,6 +6,7 @@ const TELEPHONE_ENTRY_RE = /^[0-9+\-() ]{6,20}$/;
 const schoolFeaturesSchema = new Schema<ISchoolFeatures>(
   {
     attributeEvaluation: { type: Boolean, default: false },
+    observations: { type: Boolean, default: false },
   },
   { _id: false }
 );
@@ -106,7 +107,7 @@ const SchoolInfoSchema = new Schema<ISchoolInfo>(
     // Feature flags
     features: {
       type: schoolFeaturesSchema,
-      default: () => ({ attributeEvaluation: false }),
+      default: () => ({ attributeEvaluation: false, observations: false }),
     },
   },
   {

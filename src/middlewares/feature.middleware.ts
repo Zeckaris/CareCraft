@@ -5,12 +5,18 @@ import { sendResponse } from '../utils/sendResponse.util.js'
 
 const FEATURE_DISABLED_MESSAGES: Record<SchoolFeature, string> = {
   attributeEvaluation: 'Attribute evaluation is not enabled for this school',
+  observations: 'Observations are not enabled for this school',
 }
 
 export function requireFeatureForTeachers(feature: SchoolFeature) {
+  return requireFeatureForRoles(feature, ['teacher'])
+}
+
+export function requireFeatureForRoles(feature: SchoolFeature, roles: string[]) {
   return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
-      if (req.user?.role !== 'teacher') {
+      const role = req.user?.role
+      if (!role || !roles.includes(role)) {
         next()
         return
       }
