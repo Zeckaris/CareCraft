@@ -4,13 +4,15 @@ import { AttributeEvaluation } from '../models/attributeEvaluation.model.js';
 import { Student } from '../models/student.model.js';
 import UserAccount from '../models/userAccount.model.js';
 import { StudentEnrollment } from '../models/studentEnrollment.model.js';
+import { TeachingAssignment } from '../models/teachingAssignment.model.js';
 import { BadgeCriteria } from '../models/badgeCriteria.model.js';
 import { AttributeCategory } from '../models/attributeCategory.model.js';
+import { getCurrentCalendar } from '../service/currentAcademic.service.js';
+import { getYearVariants } from '../utils/yearNormalizer.js';
 import { sendResponse } from '../utils/sendResponse.util.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import {
   resolveTeacherId,
-  assertTeacherCanWriteStudent,
   assertTeacherCanReadStudent,
   assertParentOwnsStudent,
   getTeacherSectionIds,
@@ -39,6 +41,53 @@ async function buildStudentConstraint(req: AuthRequest): Promise<any> {
   }
 
   return { studentId: new mongoose.Types.ObjectId() }
+}
+
+function httpError(statusCode: number, message: string): Error & { statusCode: number } {
+  const error = new Error(message) as Error & { statusCode: number }
+  error.statusCode = statusCode
+  return error
+}
+
+async function assertTeacherCanEvaluateEnrollment(
+  teacherId: string | mongoose.Types.ObjectId,
+  studentId: string,
+  enrollment: any
+): Promise<void> {
+  if (!enrollment || enrollment.studentId?.toString() !== studentId) {
+    throw httpError(400, 'Invalid studentEnrollmentId: Enrollment not found or does not match student')
+  }
+  if (!enrollment.isActive) {
+    throw httpError(400, 'Invalid studentEnrollmentId: Enrollment is not active')
+  }
+
+  const currentCalendar = await getCurrentCalendar()
+  if (!currentCalendar?.academicYear) {
+    throw httpError(400, 'Cannot evaluate: no current academic year is configured')
+  }
+
+  const currentYearVariants = getYearVariants(currentCalendar.academicYear)
+  if (!currentYearVariants.includes(enrollment.schoolYear)) {
+    throw httpError(400, 'Cannot evaluate: enrollment does not belong to the current academic year')
+  }
+
+  if (!enrollment.sectionId) {
+    throw httpError(400, 'Cannot evaluate: enrollment has no section')
+  }
+
+  const homeroom = await TeachingAssignment.findOne({
+    teacherId,
+    sectionId: enrollment.sectionId,
+    role: 'homeroom',
+    schoolYear: { $in: getYearVariants(enrollment.schoolYear) },
+  }).lean()
+
+  if (!homeroom) {
+    throw httpError(
+      403,
+      'Forbidden: Only the homeroom teacher of this section can create or edit attribute evaluations'
+    )
+  }
 }
 
 // ─── GET ALL ──────────────────────────────────────────────────────────────────
@@ -292,11 +341,7 @@ export const createAttributeEvaluation = async (req: AuthRequest, res: Response)
   }
 
   try {
-    // Access guard: homeroom teacher only
     const user = req.user!
-    if (user.role === 'teacher') {
-      await assertTeacherCanWriteStudent(effectiveTeacherId, studentId)
-    }
 
     // Validate references
     const student = await Student.findById(studentId);
@@ -313,6 +358,9 @@ export const createAttributeEvaluation = async (req: AuthRequest, res: Response)
     if (!enrollment || enrollment.studentId.toString() !== studentId) {
       sendResponse(res, 400, false, 'Invalid studentEnrollmentId: Enrollment not found or does not match student');
       return;
+    }
+    if (user.role === 'teacher') {
+      await assertTeacherCanEvaluateEnrollment(effectiveTeacherId, studentId, enrollment)
     }
     for (const attr of attributes) {
       const category = await AttributeCategory.findById(attr.attributeId);
@@ -374,11 +422,7 @@ export const updateAttributeEvaluation = async (req: AuthRequest, res: Response)
       return;
     }
 
-    // Access guard: homeroom teacher only
     const user = req.user!
-    if (user.role === 'teacher') {
-      await assertTeacherCanWriteStudent(user.id, evaluation.studentId.toString())
-    }
 
     // Validate inputs if provided
     if (studentId) {
@@ -424,6 +468,13 @@ export const updateAttributeEvaluation = async (req: AuthRequest, res: Response)
     if (remark !== undefined && (typeof remark !== 'string' || remark.length > 500)) {
       sendResponse(res, 400, false, 'Invalid remark: Must be ≤500 characters if provided');
       return;
+    }
+
+    if (user.role === 'teacher') {
+      const targetStudentId = (studentId || evaluation.studentId.toString()).toString()
+      const targetEnrollmentId = studentEnrollmentId || evaluation.studentEnrollmentId.toString()
+      const targetEnrollment = await StudentEnrollment.findById(targetEnrollmentId)
+      await assertTeacherCanEvaluateEnrollment(user.id, targetStudentId, targetEnrollment)
     }
 
     // Check for duplicates if changing student or enrollment
@@ -500,10 +551,10 @@ export const patchAttributeEvaluation = async (req: AuthRequest, res: Response):
       return;
     }
 
-    // Access guard: homeroom teacher only
     const user = req.user!
     if (user.role === 'teacher') {
-      await assertTeacherCanWriteStudent(user.id, evaluation.studentId.toString())
+      const enrollment = await StudentEnrollment.findById(evaluation.studentEnrollmentId)
+      await assertTeacherCanEvaluateEnrollment(user.id, evaluation.studentId.toString(), enrollment)
     }
 
     // Validate attributeIds

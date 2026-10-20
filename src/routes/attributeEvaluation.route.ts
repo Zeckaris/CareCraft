@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middlewares/auth.middleware.js';
 import { roleMiddleware } from '../middlewares/role.middleware.js';
+import { requireFeatureForTeachers } from '../middlewares/feature.middleware.js';
 import {
   getAllAttributeEvaluations,
   getAttributeEvaluationsByStudent,
@@ -14,13 +15,15 @@ import {
 
 const router = Router();
 
-router.get('/', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher', 'parent'), getAllAttributeEvaluations);
-router.get('/student/:studentId', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher', 'parent'), getAttributeEvaluationsByStudent);
-router.get('/teacher/:teacherId', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher', 'parent'), getAttributeEvaluationsByTeacher);
-router.get('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher', 'parent'), getAttributeEvaluationById);
-router.post('/', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), createAttributeEvaluation);
-router.put('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), updateAttributeEvaluation);
-router.patch('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), patchAttributeEvaluation);
-router.delete('/:id', authMiddleware, roleMiddleware('admin', 'coordinator'), deleteAttributeEvaluation);
+router.use(authMiddleware, requireFeatureForTeachers('attributeEvaluation'));
+
+router.get('/', roleMiddleware('admin', 'coordinator', 'teacher', 'parent'), getAllAttributeEvaluations);
+router.get('/student/:studentId', roleMiddleware('admin', 'coordinator', 'teacher', 'parent'), getAttributeEvaluationsByStudent);
+router.get('/teacher/:teacherId', roleMiddleware('admin', 'coordinator', 'teacher'), getAttributeEvaluationsByTeacher);
+router.get('/:id', roleMiddleware('admin', 'coordinator', 'teacher', 'parent'), getAttributeEvaluationById);
+router.post('/', roleMiddleware('admin', 'coordinator', 'teacher'), createAttributeEvaluation);
+router.put('/:id', roleMiddleware('admin', 'coordinator', 'teacher'), updateAttributeEvaluation);
+router.patch('/:id', roleMiddleware('admin', 'coordinator', 'teacher'), patchAttributeEvaluation);
+router.delete('/:id', roleMiddleware('admin', 'coordinator'), deleteAttributeEvaluation);
 
 export default router;

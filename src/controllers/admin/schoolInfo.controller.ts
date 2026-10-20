@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
 import { SchoolInfo } from '../../models/schoolInfo.model.js';
+import { ISchoolFeatures } from '../../types/schoolInfo.type.js';
+import { getDefaultFeatures, normalizeFeatures } from '../../service/feature.service.js';
 import { sendResponse } from '../../utils/sendResponse.util.js';
 
 // Cloudinary integration
@@ -138,6 +140,7 @@ function serializeSchoolInfo(schoolInfo: any): any {
       ? schoolInfo.toObject()
       : { ...schoolInfo };
   object.telephone = deriveTelephone(object);
+  object.features = normalizeFeatures(object.features);
   return object;
 }
 
@@ -145,6 +148,7 @@ function stripTelephoneFields(body: any): any {
   const data = { ...(body ?? {}) };
   delete data["telephone[]"];
   delete data.telephone;
+  delete data.features;
   return data;
 }
 
@@ -273,7 +277,7 @@ export const getSchoolInfo = async (req: Request, res: Response): Promise<void> 
 export const getBranding = async (req: Request, res: Response): Promise<void> => {
   try {
     const schoolInfo = await SchoolInfo.findOne()
-      .select('name logo theme fontFamily')
+      .select('name logo theme fontFamily features')
       .lean();
 
     if (!schoolInfo) {
@@ -282,6 +286,7 @@ export const getBranding = async (req: Request, res: Response): Promise<void> =>
         logo: null,
         theme: "palette-1",
         fontFamily: "Roboto",
+        features: getDefaultFeatures(),
       });
       return;
     }
@@ -291,6 +296,7 @@ export const getBranding = async (req: Request, res: Response): Promise<void> =>
       logo: schoolInfo.logo ?? null,
       theme: schoolInfo.theme,
       fontFamily: schoolInfo.fontFamily,
+      features: normalizeFeatures(schoolInfo.features),
     });
   } catch (error) {
     sendResponse(res, 500, false, "Internal server error", null, error);
@@ -416,6 +422,74 @@ export const updateBranding = async (req: Request, res: Response): Promise<void>
       return;
     }
     
+    sendResponse(res, 500, false, "Internal server error", null, error);
+  }
+};
+
+const FEATURE_KEYS = ['attributeEvaluation'] as const;
+type FeatureKey = (typeof FEATURE_KEYS)[number];
+
+export const updateSchoolFeatures = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const schoolInfo = await SchoolInfo.findOne();
+    if (!schoolInfo) {
+      sendResponse(res, 404, false, "School info not found. Please create one first.");
+      return;
+    }
+
+    const body = req.body;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      sendResponse(res, 400, false, "Request body must be an object");
+      return;
+    }
+
+    const unknownKeys = Object.keys(body).filter(
+      (key) => !FEATURE_KEYS.includes(key as FeatureKey)
+    );
+    if (unknownKeys.length > 0) {
+      sendResponse(res, 400, false, `Unknown feature key(s): ${unknownKeys.join(", ")}`);
+      return;
+    }
+
+    const updates: Partial<ISchoolFeatures> = {};
+    if (Object.prototype.hasOwnProperty.call(body, "attributeEvaluation")) {
+      if (typeof body.attributeEvaluation !== "boolean") {
+        sendResponse(res, 400, false, "attributeEvaluation must be a boolean");
+        return;
+      }
+      updates.attributeEvaluation = body.attributeEvaluation;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      sendResponse(res, 400, false, "At least one feature flag is required");
+      return;
+    }
+
+    const features = {
+      ...normalizeFeatures(schoolInfo.features),
+      ...updates,
+    };
+
+    const updatedInfo = await SchoolInfo.findByIdAndUpdate(
+      schoolInfo._id,
+      { $set: { features } },
+      { new: true, runValidators: true }
+    ).lean();
+
+    sendResponse(
+      res,
+      200,
+      true,
+      "School features updated successfully",
+      normalizeFeatures(updatedInfo?.features)
+    );
+  } catch (error: any) {
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map((err: any) => err.message);
+      sendResponse(res, 400, false, "Validation failed", null, { details: validationErrors });
+      return;
+    }
+
     sendResponse(res, 500, false, "Internal server error", null, error);
   }
 };

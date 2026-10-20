@@ -1,5 +1,9 @@
 import { Document, Types } from "mongoose";
 
+export interface ISchoolFeatures {
+  attributeEvaluation: boolean;
+}
+
 export interface ISchoolInfo extends Document {
   _id: Types.ObjectId;
 
@@ -35,6 +39,9 @@ export interface ISchoolInfo extends Document {
   numberOfPeriods?: number;
   defaultPassingScore: number;
   gradingSystem: "Percentage" | "Letter (A-F)" | "Grade Points (4.0)" | "Custom";
+
+  // Feature flags
+  features?: ISchoolFeatures;
 
   createdAt: Date;
   updatedAt: Date;

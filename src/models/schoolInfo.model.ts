@@ -1,7 +1,14 @@
 import mongoose, { Schema } from "mongoose";
-import { ISchoolInfo } from '../types/schoolInfo.type.js';
+import { ISchoolFeatures, ISchoolInfo } from '../types/schoolInfo.type.js';
 
 const TELEPHONE_ENTRY_RE = /^[0-9+\-() ]{6,20}$/;
+
+const schoolFeaturesSchema = new Schema<ISchoolFeatures>(
+  {
+    attributeEvaluation: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
 
 const SchoolInfoSchema = new Schema<ISchoolInfo>(
   {
@@ -94,6 +101,12 @@ const SchoolInfoSchema = new Schema<ISchoolInfo>(
       type: String,
       enum: ["Percentage", "Letter (A-F)", "Grade Points (4.0)", "Custom"],
       default: "Percentage",
+    },
+
+    // Feature flags
+    features: {
+      type: schoolFeaturesSchema,
+      default: () => ({ attributeEvaluation: false }),
     },
   },
   {
