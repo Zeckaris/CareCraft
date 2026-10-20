@@ -6,12 +6,16 @@ export interface ISchoolInfo extends Document {
   // Basic Identity
   name: string;
   motto?: string;
+  about?: string;
   establishedYear?: number;
 
   // Contact
   address: string;
   contactEmail: string;
-  contactPhone: string;
+  telephone?: string[];
+  /** @deprecated Use telephone. */
+  contactPhone?: string;
+  /** @deprecated Use telephone. */
   alternatePhone?: string;
   website?: string;
 
