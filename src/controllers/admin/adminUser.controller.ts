@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import UserAccount from '../../models/userAccount.model.js';
 import { TeachingAssignment } from '../../models/teachingAssignment.model.js';
 import { AttributeEvaluation } from '../../models/attributeEvaluation.model.js';
+import { Observation } from '../../models/observation.model.js';
 import { sendResponse } from '../../utils/sendResponse.util.js';
 import { IUserAccount } from '../../types/userAccount.type.js';
 
@@ -206,6 +207,16 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
           400,
           false,
           `Cannot delete teacher: ${aeCount} attribute evaluation(s) reference them. Remove those first.`
+        );
+      }
+
+      const observationCount = await Observation.countDocuments({ teacherId: id });
+      if (observationCount > 0) {
+        return sendResponse(
+          res,
+          400,
+          false,
+          `Cannot delete teacher: ${observationCount} observation(s) reference them. Remove those first.`
         );
       }
     }

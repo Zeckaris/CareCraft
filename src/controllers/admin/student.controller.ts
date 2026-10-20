@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { Student } from '../../models/student.model.js'
 import mongoose, { Types } from 'mongoose'
 import { StudentEnrollment } from '../../models/studentEnrollment.model.js'
+import { Observation } from '../../models/observation.model.js'
 import { sendResponse } from '../../utils/sendResponse.util.js' 
 import { logAudit } from '../../utils/auditLogger.util.js'
 import { AuthRequest } from '../../middlewares/auth.middleware.js'
@@ -275,6 +276,23 @@ export const deleteStudent = async (req: AuthRequest, res: Response): Promise<vo
   }
 
   try {
+    const student = await Student.findById(id)
+    if (!student) {
+      sendResponse(res, 404, false, 'Student not found.')
+      return
+    }
+
+    const observationCount = await Observation.countDocuments({ studentId: id })
+    if (observationCount > 0) {
+      sendResponse(
+        res,
+        400,
+        false,
+        `Cannot delete student: ${observationCount} observation(s) reference them. Remove those first.`
+      )
+      return
+    }
+
     const deletedStudent = await Student.findByIdAndDelete(id)
     if (!deletedStudent) {
       sendResponse(res, 404, false, 'Student not found.')
