@@ -5,8 +5,10 @@ export interface IObservation extends Document {
   studentId: Types.ObjectId
   teacherId: Types.ObjectId
   date: Date
-  category: Types.ObjectId
-  score : number;
+  subjectId?: Types.ObjectId | null
   description: string
+  schoolYear: string
+  term: Types.ObjectId
   createdAt: Date
+  updatedAt: Date
 }
