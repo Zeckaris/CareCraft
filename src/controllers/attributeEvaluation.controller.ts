@@ -85,7 +85,7 @@ export const getAllAttributeEvaluations = async (req: AuthRequest, res: Response
     const evaluations = await AttributeEvaluation.find(filter)
       .populate('studentId', 'firstName lastName')
       .populate('teacherId', 'firstName lastName email role')
-      .populate('studentEnrollmentId', 'gradeId isActive')
+      .populate('studentEnrollmentId', 'gradeId schoolYear isActive')
       .populate('attributes.attributeId', 'name description minScore maxScore')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -141,7 +141,7 @@ export const getAttributeEvaluationsByStudent = async (req: AuthRequest, res: Re
     const evaluations = await AttributeEvaluation.find(filter)
       .populate('studentId', 'firstName lastName')
       .populate('teacherId', 'firstName lastName email role')
-      .populate('studentEnrollmentId', 'gradeId isActive')
+      .populate('studentEnrollmentId', 'gradeId schoolYear isActive')
       .populate('attributes.attributeId', 'name description minScore maxScore')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -197,7 +197,7 @@ export const getAttributeEvaluationsByTeacher = async (req: AuthRequest, res: Re
     const evaluations = await AttributeEvaluation.find(filter)
       .populate('studentId', 'firstName lastName')
       .populate('teacherId', 'firstName lastName email role')
-      .populate('studentEnrollmentId', 'gradeId isActive')
+      .populate('studentEnrollmentId', 'gradeId schoolYear isActive')
       .populate('attributes.attributeId', 'name description minScore maxScore')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -229,7 +229,7 @@ export const getAttributeEvaluationById = async (req: AuthRequest, res: Response
     const evaluation = await AttributeEvaluation.findById(id)
       .populate('studentId', 'firstName lastName')
       .populate('teacherId', 'firstName lastName email role')
-      .populate('studentEnrollmentId', 'gradeId isActive')
+      .populate('studentEnrollmentId', 'gradeId schoolYear isActive')
       .populate('attributes.attributeId', 'name description minScore maxScore')
       .lean();
     if (!evaluation) {
@@ -343,7 +343,7 @@ export const createAttributeEvaluation = async (req: AuthRequest, res: Response)
     const populated = await AttributeEvaluation.findById(evaluation._id)
       .populate('studentId', 'firstName lastName')
       .populate('teacherId', 'firstName lastName email role')
-      .populate('studentEnrollmentId', 'gradeId isActive')
+      .populate('studentEnrollmentId', 'gradeId schoolYear isActive')
       .populate('attributes.attributeId', 'name description minScore maxScore')
       .lean();
     sendResponse(res, 201, true, 'Attribute evaluation created successfully', populated);
@@ -456,7 +456,7 @@ export const updateAttributeEvaluation = async (req: AuthRequest, res: Response)
     const updated = await AttributeEvaluation.findByIdAndUpdate(id, updateData, { new: true })
       .populate('studentId', 'firstName lastName')
       .populate('teacherId', 'firstName lastName email role')
-      .populate('studentEnrollmentId', 'gradeId isActive')
+      .populate('studentEnrollmentId', 'gradeId schoolYear isActive')
       .populate('attributes.attributeId', 'name description minScore maxScore')
       .lean();
     sendResponse(res, 200, true, 'Attribute evaluation updated successfully', updated);
@@ -543,7 +543,7 @@ export const patchAttributeEvaluation = async (req: AuthRequest, res: Response):
     const updated = await AttributeEvaluation.findById(id)
       .populate('studentId', 'firstName lastName')
       .populate('teacherId', 'firstName lastName email role')
-      .populate('studentEnrollmentId', 'gradeId isActive')
+      .populate('studentEnrollmentId', 'gradeId schoolYear isActive')
       .populate('attributes.attributeId', 'name description minScore maxScore')
       .lean();
     sendResponse(res, 200, true, 'Attribute evaluation patched successfully', updated);
