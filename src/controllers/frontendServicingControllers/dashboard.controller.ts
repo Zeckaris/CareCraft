@@ -2,9 +2,12 @@ import { Request, Response } from 'express'
 import { Student } from '../../models/student.model.js'
 import UserAccount from '../../models/userAccount.model.js'
 import {
+  getAttendanceCompliance,
   getAttendanceSnapshot,
+  getChronicAbsentees,
   getClassPerformance,
   getEnrollmentTrend,
+  getPerformanceAlerts,
   getRecentActivities,
 } from '../../service/dashboard.service.js'
 import { sendResponse } from '../../utils/sendResponse.util.js'
@@ -14,6 +17,30 @@ function parseActivityLimit(value: unknown): number {
   const parsed = typeof raw === 'string' ? Number(raw) : NaN
   if (!Number.isInteger(parsed) || parsed < 1) return 7
   return Math.min(parsed, 20)
+}
+
+function parsePerformanceThreshold(
+  value: unknown
+): { value: number } | { error: string } {
+  const raw = Array.isArray(value) ? value[0] : value
+  if (raw === undefined || raw === '') return { value: 65 }
+  const parsed = typeof raw === 'string' ? Number(raw) : NaN
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+    return { error: 'threshold must be a number between 0 and 100' }
+  }
+  return { value: parsed }
+}
+
+function parsePerformanceLimit(
+  value: unknown
+): { value: number } | { error: string } {
+  const raw = Array.isArray(value) ? value[0] : value
+  if (raw === undefined || raw === '') return { value: 50 }
+  const parsed = typeof raw === 'string' ? Number(raw) : NaN
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 200) {
+    return { error: 'limit must be an integer between 1 and 200' }
+  }
+  return { value: parsed }
 }
 
 export const getDashboardStats = async (req: Request, res: Response) => {
@@ -117,6 +144,91 @@ export const getClassPerformanceStats = async (_req: Request, res: Response) => 
       500,
       false,
       'Failed to fetch class performance',
+      null,
+      error instanceof Error ? error.message : 'Internal server error'
+    )
+  }
+}
+
+export const getAttendanceComplianceStats = async (
+  _req: Request,
+  res: Response
+) => {
+  try {
+    const data = await getAttendanceCompliance()
+    return sendResponse(
+      res,
+      200,
+      true,
+      'Attendance compliance fetched successfully',
+      data
+    )
+  } catch (error) {
+    console.error('Attendance compliance error:', error)
+    return sendResponse(
+      res,
+      500,
+      false,
+      'Failed to fetch attendance compliance',
+      null,
+      error instanceof Error ? error.message : 'Internal server error'
+    )
+  }
+}
+
+export const getChronicAbsenteeStats = async (_req: Request, res: Response) => {
+  try {
+    const data = await getChronicAbsentees()
+    return sendResponse(
+      res,
+      200,
+      true,
+      'Chronic absentees fetched successfully',
+      data
+    )
+  } catch (error) {
+    console.error('Chronic absentees error:', error)
+    return sendResponse(
+      res,
+      500,
+      false,
+      'Failed to fetch chronic absentees',
+      null,
+      error instanceof Error ? error.message : 'Internal server error'
+    )
+  }
+}
+
+export const getPerformanceAlertStats = async (req: Request, res: Response) => {
+  const threshold = parsePerformanceThreshold(req.query.threshold)
+  if ('error' in threshold) {
+    return sendResponse(res, 400, false, threshold.error)
+  }
+
+  const limit = parsePerformanceLimit(req.query.limit)
+  if ('error' in limit) {
+    return sendResponse(res, 400, false, limit.error)
+  }
+
+  try {
+    const data = await getPerformanceAlerts({
+      threshold: threshold.value,
+      limit: limit.value,
+    })
+    return sendResponse(
+      res,
+      200,
+      true,
+      'Performance alerts fetched successfully',
+      data
+    )
+  } catch (error) {
+    console.error('Performance alerts error:', error)
+    return sendResponse(
+      res,
+      500,
+      false,
+      'Failed to fetch performance alerts',
       null,
       error instanceof Error ? error.message : 'Internal server error'
     )
