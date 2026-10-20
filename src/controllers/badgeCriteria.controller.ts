@@ -128,7 +128,7 @@ export const createBadgeCriteria = async (req: Request, res: Response): Promise<
       sendResponse(res, 404, false, 'BadgeDefinition not found');
       return;
     }
-    if (attributeCategoryId && type !== 'attributeEvaluationAverage') {
+    if (attributeCategoryId && type !== 'attributeEvaluationAverage' && type !== 'observationCount') {
       const attributeCategory = await AttributeCategory.findById(attributeCategoryId);
       if (!attributeCategory) {
         sendResponse(res, 404, false, 'AttributeCategory not found');
@@ -156,8 +156,8 @@ export const createBadgeCriteria = async (req: Request, res: Response): Promise<
       sendResponse(res, 400, false, 'actionPlanProgress requires actionPlanId and minProgress');
       return;
     }
-    if (type === 'observationCount' && (!attributeCategoryId || minObservations === null || minObservations === undefined)) {
-      sendResponse(res, 400, false, 'observationCount requires attributeCategoryId and minObservations');
+    if (type === 'observationCount' && (minObservations === null || minObservations === undefined)) {
+      sendResponse(res, 400, false, 'observationCount requires minObservations');
       return;
     }
     if (type === 'custom' && !description) {
@@ -178,7 +178,7 @@ export const createBadgeCriteria = async (req: Request, res: Response): Promise<
     const criteria = await BadgeCriteria.create({
       badgeDefinitionId,
       type,
-      attributeCategoryId: attributeCategoryId || null,
+      attributeCategoryId: type === 'observationCount' ? null : (attributeCategoryId || null),
       minScore: minScore !== undefined ? minScore : null,
       actionPlanId: actionPlanId || null,
       minProgress: minProgress !== undefined ? minProgress : null,
@@ -250,6 +250,20 @@ export const updateBadgeCriteria = async (req: Request, res: Response): Promise<
       return;
     }
 
+    const effectiveType = type || criteria.type;
+    const effectiveAttributeCategoryId =
+      attributeCategoryId !== undefined ? attributeCategoryId : criteria.attributeCategoryId;
+    const effectiveMinScore = minScore !== undefined ? minScore : criteria.minScore;
+    const effectiveActionPlanId =
+      actionPlanId !== undefined ? actionPlanId : criteria.actionPlanId;
+    const effectiveMinProgress =
+      minProgress !== undefined ? minProgress : criteria.minProgress;
+    const effectiveMinObservations =
+      minObservations !== undefined ? minObservations : criteria.minObservations;
+    const effectiveScope = scope !== undefined ? scope : criteria.scope;
+    const effectiveDescription =
+      description !== undefined ? description : criteria.description;
+
     // Validate referenced documents
     if (badgeDefinitionId && badgeDefinitionId !== criteria.badgeDefinitionId.toString()) {
       const badgeDefinition = await BadgeDefinition.findById(badgeDefinitionId);
@@ -258,7 +272,7 @@ export const updateBadgeCriteria = async (req: Request, res: Response): Promise<
         return;
       }
     }
-    if (attributeCategoryId && type !== 'attributeEvaluationAverage') {
+    if (attributeCategoryId && effectiveType !== 'attributeEvaluationAverage' && effectiveType !== 'observationCount') {
       const attributeCategory = await AttributeCategory.findById(attributeCategoryId);
       if (!attributeCategory) {
         sendResponse(res, 404, false, 'AttributeCategory not found');
@@ -278,28 +292,28 @@ export const updateBadgeCriteria = async (req: Request, res: Response): Promise<
     }
 
     // Validate type-specific fields
-    if (type === 'scoreThreshold' && (!attributeCategoryId || minScore === null || minScore === undefined)) {
+    if (effectiveType === 'scoreThreshold' && (!effectiveAttributeCategoryId || effectiveMinScore === null || effectiveMinScore === undefined)) {
       sendResponse(res, 400, false, 'scoreThreshold requires attributeCategoryId and minScore');
       return;
     }
-    if (type === 'actionPlanProgress' && (!actionPlanId || minProgress === null || minProgress === undefined)) {
+    if (effectiveType === 'actionPlanProgress' && (!effectiveActionPlanId || effectiveMinProgress === null || effectiveMinProgress === undefined)) {
       sendResponse(res, 400, false, 'actionPlanProgress requires actionPlanId and minProgress');
       return;
     }
-    if (type === 'observationCount' && (!attributeCategoryId || minObservations === null || minObservations === undefined)) {
-      sendResponse(res, 400, false, 'observationCount requires attributeCategoryId and minObservations');
+    if (effectiveType === 'observationCount' && (effectiveMinObservations === null || effectiveMinObservations === undefined)) {
+      sendResponse(res, 400, false, 'observationCount requires minObservations');
       return;
     }
-    if (type === 'custom' && !description) {
+    if (effectiveType === 'custom' && !effectiveDescription) {
       sendResponse(res, 400, false, 'custom type requires a description');
       return;
     }
-    if (type === 'attributeEvaluationAverage') {
-      if (minScore === null || minScore === undefined || scope === undefined || !['yearly', 'allTime'].includes(scope)) {
+    if (effectiveType === 'attributeEvaluationAverage') {
+      if (effectiveMinScore === null || effectiveMinScore === undefined || effectiveScope === undefined || !['yearly', 'allTime'].includes(effectiveScope)) {
         sendResponse(res, 400, false, 'attributeEvaluationAverage requires minScore and scope (yearly or allTime)');
         return;
       }
-      if (attributeCategoryId || actionPlanId || minProgress !== null || minObservations !== null) {
+      if (effectiveAttributeCategoryId || effectiveActionPlanId || effectiveMinProgress !== null || effectiveMinObservations !== null) {
         sendResponse(res, 400, false, 'attributeEvaluationAverage must have null attributeCategoryId, actionPlanId, minProgress, and minObservations');
         return;
       }
@@ -321,6 +335,7 @@ export const updateBadgeCriteria = async (req: Request, res: Response): Promise<
     if (minObservations !== undefined) updateData.minObservations = minObservations !== null ? minObservations : null;
     if (scope !== undefined) updateData.scope = scope || null;
     if (description !== undefined) updateData.description = description || '';
+    if (effectiveType === 'observationCount') updateData.attributeCategoryId = null;
 
     const updated = await BadgeCriteria.findByIdAndUpdate(id, updateData, { new: true }).lean();
     sendResponse(res, 200, true, 'Badge criteria updated successfully', updated);
