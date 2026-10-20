@@ -20,6 +20,7 @@ import { ConductedAssessment } from '../models/ConductedAssessment.model.js'
 import { AcademicTerm } from '../models/academicTerm.model.js'
 import { AcademicCalendar } from '../models/academicCalendar.model.js'
 import { Section } from '../models/section.model.js'
+import { Subject } from '../models/subject.model.js'
 import { StudentEnrollment } from '../models/studentEnrollment.model.js'
 import { TeachingAssignment } from '../models/teachingAssignment.model.js'
 import { computeTotals, deriveStatus } from '../utils/assessment.utility.js'
@@ -53,6 +54,7 @@ export interface AssessmentContext {
   typeById: Map<string, any>
   typeWeightById: Map<string, number>
   term: any
+  subjectName: string
   conducted: any | null
 }
 
@@ -91,6 +93,8 @@ export async function resolveAssessmentContext(
       'No assessment setup is assigned for this subject and grade'
     )
   }
+
+  const subject = await Subject.findById(gsa.subjectId).select('name').lean()
 
   const setup = await AssessmentSetup.findById(gsa.assessmentSetupId).populate(
     'assessmentTypeIds'
@@ -174,6 +178,7 @@ export async function resolveAssessmentContext(
     typeById,
     typeWeightById,
     term,
+    subjectName: (subject as any)?.name ?? 'Unknown subject',
     conducted,
   }
 }
@@ -370,9 +375,20 @@ export async function writeStageScores(
     sectionId: section._id,
     isActive: true,
   })
-    .select('studentId')
+    .populate('studentId', 'firstName middleName lastName')
     .lean()
-  const activeStudentIds = new Set(enrollments.map((e: any) => String(e.studentId)))
+  const activeStudentIds = new Set(
+    enrollments.map((e: any) => String(e.studentId?._id ?? e.studentId))
+  )
+  const studentNameById = new Map<string, string>(
+    enrollments.map((e: any) => {
+      const student = e.studentId as any
+      const name = [student?.firstName, student?.middleName, student?.lastName]
+        .filter(Boolean)
+        .join(' ')
+      return [String(student?._id ?? student), name || 'Unknown student']
+    })
+  )
 
   // Deduplicate: only the first record per student is processed.
   const seen = new Set<string>()
@@ -519,9 +535,9 @@ export async function writeStageScores(
       })
       await logAudit(req, {
         type: 'ASSESSMENT_SCORE_WRITE',
-        message: `Recorded ${type.name} score ${rec.score} for student ${sid} in section ${String(
-          section._id
-        )} (${section.schoolYear})`,
+        message: `Recorded ${type.name} score ${rec.score} for ${
+          studentNameById.get(sid) ?? 'Unknown student'
+        } in section ${section.name} (${section.schoolYear}), ${context.subjectName}, ${term.name}`,
         action: 'recorded',
         entity: 'AssessmentScore',
         target: String(doc._id),
@@ -604,9 +620,9 @@ export async function writeStageScores(
 
     await logAudit(req, {
       type: 'ASSESSMENT_SCORE_WRITE',
-      message: `Updated ${type.name} score to ${rec.score} for student ${sid} in section ${String(
-        section._id
-      )}`,
+      message: `Updated ${type.name} score to ${rec.score} for ${
+        studentNameById.get(sid) ?? 'Unknown student'
+      } in section ${section.name}, ${context.subjectName}, ${term.name}`,
       action: 'corrected',
       entity: 'AssessmentScore',
       target: String(existing._id),

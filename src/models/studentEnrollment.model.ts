@@ -42,6 +42,9 @@ studentEnrollmentSchema.virtual('sectionName').get(function (this: any) {
 // Index for fast "all enrollments in a section" queries
 studentEnrollmentSchema.index({ sectionId: 1, isActive: 1 })
 
+// Dashboard enrollment rollups by school year and grade.
+studentEnrollmentSchema.index({ schoolYear: 1, gradeId: 1 })
+
 export const StudentEnrollment = model<IStudentEnrollment>(
   'StudentEnrollment',
   studentEnrollmentSchema

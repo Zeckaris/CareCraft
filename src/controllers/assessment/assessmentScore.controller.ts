@@ -14,6 +14,7 @@ import mongoose from 'mongoose'
 import { AssessmentScore } from '../../models/assessment/assessmentScore.model.js'
 import { GradeSubjectAssessment } from '../../models/gradeSubjectAssessment.model.js'
 import { StudentEnrollment } from '../../models/studentEnrollment.model.js'
+import { Student } from '../../models/student.model.js'
 import { AcademicTerm } from '../../models/academicTerm.model.js'
 import { ConductedAssessment } from '../../models/ConductedAssessment.model.js'
 import { sendResponse } from '../../utils/sendResponse.util.js'
@@ -579,7 +580,7 @@ export const reopenStage = async (req: AuthRequest, res: Response): Promise<void
 
     await logAudit(req, {
       type: 'ASSESSMENT_STAGE_REOPEN',
-      message: `Reopened ${type.name} for section ${String(ctx.section._id)} (${ctx.term.name})`,
+      message: `Reopened ${type.name} for section ${ctx.section.name} in ${ctx.subjectName} (${ctx.term.name})`,
       action: 'reopened',
       entity: 'ConductedAssessment',
       target: String(conducted._id),
@@ -740,7 +741,7 @@ export const deleteAssessmentScore = async (req: AuthRequest, res: Response): Pr
     if (!mongoose.isValidObjectId(doc.academicTermId)) {
       throw new AssessmentError(400, 'Marksheet has no valid academic term')
     }
-    await resolveAssessmentContext(
+    const ctx = await resolveAssessmentContext(
       String(doc.sectionId),
       String(gsa.subjectId),
       String(doc.academicTermId),
@@ -770,12 +771,18 @@ export const deleteAssessmentScore = async (req: AuthRequest, res: Response): Pr
       )
     }
 
+    const student = await Student.findById(doc.studentId)
+      .select('firstName middleName lastName')
+      .lean()
+    const studentName =
+      [student?.firstName, student?.middleName, student?.lastName]
+        .filter(Boolean)
+        .join(' ') || 'Unknown student'
+
     await AssessmentScore.findByIdAndDelete(id)
     await logAudit(req, {
       type: 'ASSESSMENT_SCORE_WRITE',
-      message: `Deleted marksheet for student ${String(doc.studentId)} in section ${String(
-        doc.sectionId
-      )}`,
+      message: `Deleted marksheet for ${studentName} in section ${ctx.section.name} for ${ctx.subjectName} (${ctx.term.name})`,
       action: 'deleted',
       entity: 'AssessmentScore',
       target: String(doc._id),

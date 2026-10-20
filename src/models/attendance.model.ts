@@ -72,4 +72,7 @@ attendanceSchema.index({ studentId: 1, schoolYear: 1 })
 // Term-scoped queries and term delete guards.
 attendanceSchema.index({ academicTermId: 1 })
 
+// Dashboard snapshot and status rollups by school day.
+attendanceSchema.index({ schoolYear: 1, date: 1, status: 1 })
+
 export const Attendance = model<IAttendance>('Attendance', attendanceSchema)
