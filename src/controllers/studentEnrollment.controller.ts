@@ -12,6 +12,7 @@ import {
   getTeacherSectionIds,
 } from '../middlewares/access.middleware.js';
 import { yearsMatch, getYearVariants, normalizeYear } from '../utils/yearNormalizer.js';
+import { sortByStudentName } from '../utils/studentSort.util.js';
 import {
   getOpenRegistrationCalendarWindows,
   resolveRegistrationTarget,
@@ -147,13 +148,16 @@ export const getAllEnrollments = async (req: AuthRequest, res: Response): Promis
   }
 
   try {
+    const orderByStudentName = !!targetSectionId;
     let query = StudentEnrollment.find(filter)
       .populate('studentId', 'firstName middleName lastName profileImage')
       .populate('gradeId', 'level')
       .populate('sectionId', 'name')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit));
+      .sort({ createdAt: -1 });
+
+    if (!orderByStudentName) {
+      query = query.skip(skip).limit(Number(limit));
+    }
 
     if (search) {
       const students = await Student.find({
@@ -176,7 +180,13 @@ export const getAllEnrollments = async (req: AuthRequest, res: Response): Promis
       query = query.where('studentId').in(studentIds);
     }
 
-    const enrollments = await query;
+    let enrollments = await query;
+    if (orderByStudentName) {
+      enrollments = sortByStudentName(
+        enrollments,
+        (enrollment: any) => enrollment.studentId
+      ).slice(skip, skip + Number(limit));
+    }
     const total = await StudentEnrollment.countDocuments(filter);
 
     sendResponse(res, 200, true, 'Enrollments fetched successfully', enrollments, null, {
@@ -581,11 +591,15 @@ export const getGradeEnrollments = async (req: AuthRequest, res: Response): Prom
   }
 
   try {
-    const enrollments = await StudentEnrollment.find(filter)
+    const found = await StudentEnrollment.find(filter)
       .populate('studentId', 'firstName middleName lastName profileImage')
       .populate('gradeId', 'level')
       .populate('sectionId', 'name')
       .sort({ createdAt: -1 });
+
+    const enrollments = targetSectionId
+      ? sortByStudentName(found, (enrollment: any) => enrollment.studentId)
+      : found;
 
     sendResponse(res, 200, true, 'Grade enrollments fetched successfully', {
       enrollments,

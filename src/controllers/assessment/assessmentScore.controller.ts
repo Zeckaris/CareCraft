@@ -18,6 +18,7 @@ import { Student } from '../../models/student.model.js'
 import { AcademicTerm } from '../../models/academicTerm.model.js'
 import { ConductedAssessment } from '../../models/ConductedAssessment.model.js'
 import { sendResponse } from '../../utils/sendResponse.util.js'
+import { sortByStudentName } from '../../utils/studentSort.util.js'
 import { computeTotals } from '../../utils/assessment.utility.js'
 import { logAudit } from '../../utils/auditLogger.util.js'
 import { AuthRequest } from '../../middlewares/auth.middleware.js'
@@ -244,12 +245,12 @@ async function buildSheet(
       }
     })
 
-  // Active students sorted by last name, then first name.
-  students.sort((a, b) =>
-    `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`)
-  )
-
-  return { columns, students, conductedStageIds, lockedStageIds }
+  return {
+    columns,
+    students: sortByStudentName(students),
+    conductedStageIds,
+    lockedStageIds,
+  }
 }
 
 /**

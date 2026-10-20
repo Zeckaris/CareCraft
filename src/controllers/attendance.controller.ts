@@ -38,6 +38,7 @@ import { validateAttendanceDate } from '../service/attendanceDateValidator.js'
 import { loadSchoolDayContext } from '../service/schoolDay.service.js'
 import { getYearVariants, normalizeYear, yearsMatch } from '../utils/yearNormalizer.js'
 import { isSchoolDateString, toSchoolDateString } from '../utils/schoolDate.util.js'
+import { sortByStudentName } from '../utils/studentSort.util.js'
 import { AttendanceStatus } from '../types/attendance.type.js'
 
 // ── Constant: correction window for homeroom teachers ────────────────────────
@@ -663,25 +664,27 @@ export const getSectionAttendanceForDate = async (
       attendanceMap.set(a.studentId.toString(), a)
     }
 
-    const roster = enrollments.map((e) => {
-      const student = e.studentId as any
-      const att = attendanceMap.get(student._id.toString())
-      return {
-        studentId: student._id,
-        firstName: student.firstName,
-        middleName: student.middleName,
-        lastName: student.lastName,
-        gender: student.gender,
-        profileImage: student.profileImage,
-        enrollmentId: e._id,
-        status: att?.status ?? null,
-        note: att?.note ?? null,
-        markedBy: att?.markedBy ?? null,
-        attendanceId: att?._id ?? null,
-        // Optimistic-concurrency token for the take endpoint (expectedUpdatedAt).
-        updatedAt: att?.updatedAt ?? null,
-      }
-    })
+    const roster = sortByStudentName(
+      enrollments.map((e) => {
+        const student = e.studentId as any
+        const att = attendanceMap.get(student._id.toString())
+        return {
+          studentId: student._id,
+          firstName: student.firstName,
+          middleName: student.middleName,
+          lastName: student.lastName,
+          gender: student.gender,
+          profileImage: student.profileImage,
+          enrollmentId: e._id,
+          status: att?.status ?? null,
+          note: att?.note ?? null,
+          markedBy: att?.markedBy ?? null,
+          attendanceId: att?._id ?? null,
+          // Optimistic-concurrency token for the take endpoint (expectedUpdatedAt).
+          updatedAt: att?.updatedAt ?? null,
+        }
+      })
+    )
 
     sendResponse(res, 200, true, 'Section attendance fetched successfully', {
       sectionId,
@@ -988,21 +991,22 @@ export const getSectionAttendanceSummary = async (
         },
       },
       { $unwind: { path: '$student', preserveNullAndEmptyArrays: true } },
-      { $sort: { 'student.lastName': 1 } },
     ])
 
-    const rows = agg.map((r) => ({
-      studentId: r._id,
-      firstName: r.student?.firstName,
-      middleName: r.student?.middleName,
-      lastName: r.student?.lastName,
-      present: r.present,
-      absent: r.absent,
-      late: r.late,
-      excused: r.excused,
-      total: r.total,
-      attendanceRate: r.total > 0 ? ((r.present + r.late) / r.total) * 100 : null,
-    }))
+    const rows = sortByStudentName(
+      agg.map((r) => ({
+        studentId: r._id,
+        firstName: r.student?.firstName,
+        middleName: r.student?.middleName,
+        lastName: r.student?.lastName,
+        present: r.present,
+        absent: r.absent,
+        late: r.late,
+        excused: r.excused,
+        total: r.total,
+        attendanceRate: r.total > 0 ? ((r.present + r.late) / r.total) * 100 : null,
+      }))
+    )
 
     sendResponse(res, 200, true, 'Section attendance summary fetched', { sectionId, rows })
   } catch (err) {

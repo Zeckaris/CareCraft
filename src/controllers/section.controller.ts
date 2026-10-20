@@ -7,6 +7,7 @@ import { TeachingAssignment } from '../models/teachingAssignment.model.js'
 import { sendResponse } from '../utils/sendResponse.util.js'
 import { getTeacherSectionIds } from '../middlewares/access.middleware.js'
 import { getYearVariants, normalizeYear, yearsMatch } from '../utils/yearNormalizer.js'
+import { sortByStudentName } from '../utils/studentSort.util.js'
 import { getCurrentCalendar } from '../service/currentAcademic.service.js'
 import { AcademicCalendar } from '../models/academicCalendar.model.js'
 import {
@@ -350,13 +351,19 @@ export const getSectionRoster = async (req: Request, res: Response): Promise<voi
       return
     }
 
-    const total = await StudentEnrollment.countDocuments({ sectionId: id, isActive: true })
-    const enrollments = await StudentEnrollment.find({ sectionId: id, isActive: true })
+    const allEnrollments = await StudentEnrollment.find({
+      sectionId: id,
+      isActive: true,
+    })
       .populate('studentId', 'firstName middleName lastName gender profileImage')
       .populate('gradeId', 'level')
-      .skip(skip)
-      .limit(Number(limit))
-      .sort({ createdAt: -1 })
+
+    const sortedEnrollments = sortByStudentName(
+      allEnrollments,
+      (enrollment: any) => enrollment.studentId
+    )
+    const total = sortedEnrollments.length
+    const enrollments = sortedEnrollments.slice(skip, skip + Number(limit))
 
     sendResponse(
       res,
