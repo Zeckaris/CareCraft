@@ -35,8 +35,9 @@ import { sendResponse } from '../utils/sendResponse.util.js'
 import { logAudit } from '../utils/auditLogger.util.js'
 import { queues } from '../redis/queueManager.js'
 import { validateAttendanceDate } from '../service/attendanceDateValidator.js'
+import { loadSchoolDayContext } from '../service/schoolDay.service.js'
 import { getYearVariants, normalizeYear, yearsMatch } from '../utils/yearNormalizer.js'
-import { toSchoolDateString } from '../utils/schoolDate.util.js'
+import { isSchoolDateString, toSchoolDateString } from '../utils/schoolDate.util.js'
 import { AttendanceStatus } from '../types/attendance.type.js'
 
 // ── Constant: correction window for homeroom teachers ────────────────────────
@@ -190,6 +191,15 @@ function decideAgainstExisting(
  * Enqueues the parent notification for an absence. Never throws – a queue
  * failure must not fail the attendance save.
  */
+function enrollmentStudentName(enrollment: any): string {
+  const student = enrollment?.studentId as any
+  return (
+    [student?.firstName, student?.middleName, student?.lastName]
+      .filter(Boolean)
+      .join(' ') || 'Unknown student'
+  )
+}
+
 async function enqueueAbsenceNotification(
   attendanceId: string,
   enrollment: any,
@@ -452,7 +462,7 @@ export const upsertSectionAttendance = async (
     )
     await logAudit(req, {
       type: 'ATTENDANCE_CORRECTION',
-      message: `Attendance corrected for student ${rec.studentId.toString()} on ${date}: ${snapshot.status} → ${rec.status}`,
+      message: `Attendance corrected for ${enrollmentStudentName(enrollment)} on ${date}: ${snapshot.status} → ${rec.status}`,
       action: 'corrected',
       entity: 'Attendance',
       target: snapshot._id.toString(),
@@ -530,7 +540,7 @@ export const upsertSectionAttendance = async (
         }
         await logAudit(req, {
           type: 'ATTENDANCE_CORRECTION',
-          message: `Attendance corrected for student ${sid} on ${date}: ${pw.existing.status} → ${pw.rec.status}`,
+          message: `Attendance corrected for ${enrollmentStudentName(pw.enrollment)} on ${date}: ${pw.existing.status} → ${pw.rec.status}`,
           action: 'corrected',
           entity: 'Attendance',
           target: pw.existing._id.toString(),
@@ -553,6 +563,52 @@ export const upsertSectionAttendance = async (
   }
 
   sendResponse(res, 200, true, 'Attendance saved successfully', { date, results })
+}
+
+// ─── GET /school-day ─────────────────────────────────────────────────────────
+export const getSchoolDay = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  const { date, schoolYear } = req.query as Record<string, unknown>
+
+  if (date !== undefined && (typeof date !== 'string' || !isSchoolDateString(date))) {
+    sendResponse(res, 400, false, 'date must be a valid YYYY-MM-DD date')
+    return
+  }
+
+  if (schoolYear !== undefined && typeof schoolYear !== 'string') {
+    sendResponse(res, 400, false, 'schoolYear must be a string')
+    return
+  }
+
+  const requestedYear = typeof schoolYear === 'string' ? schoolYear.trim() : undefined
+  if (requestedYear !== undefined && !/^\d{4}-(\d{4}|\d{2})$/.test(requestedYear)) {
+    sendResponse(res, 400, false, 'schoolYear must be in YYYY-YYYY or YYYY-YY format')
+    return
+  }
+
+  try {
+    const loaded = await loadSchoolDayContext(requestedYear)
+    if (!loaded.ok) {
+      sendResponse(res, loaded.status, false, loaded.message)
+      return
+    }
+
+    const { context } = loaded
+    const resolvedDate = typeof date === 'string' ? date : context.today
+    const outcome = context.isSchoolDay(resolvedDate)
+
+    sendResponse(res, 200, true, 'School day status fetched successfully', {
+      date: resolvedDate,
+      schoolYear: context.schoolYear,
+      isSchoolDay: outcome.isSchoolDay,
+      reason: outcome.reason,
+      academicTermId: outcome.academicTermId,
+    })
+  } catch (err) {
+    sendResponse(res, 500, false, 'Server error fetching school day status', null, err)
+  }
 }
 
 // ─── GET /section/:sectionId/date/:date ──────────────────────────────────────

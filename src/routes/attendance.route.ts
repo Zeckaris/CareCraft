@@ -30,6 +30,7 @@ import { authMiddleware } from '../middlewares/auth.middleware.js'
 import { roleMiddleware } from '../middlewares/role.middleware.js'
 import {
   upsertSectionAttendance,
+  getSchoolDay,
   getSectionAttendanceForDate,
   getStudentAttendance,
   getSectionAttendanceRange,
@@ -38,6 +39,14 @@ import {
 } from '../controllers/attendance.controller.js'
 
 const router = express.Router()
+
+// ── School day lookup ────────────────────────────────────────────────────────
+router.get(
+  '/school-day',
+  authMiddleware,
+  roleMiddleware('admin', 'coordinator', 'teacher'),
+  getSchoolDay
+)
 
 // ── Section-date attendance (write) ──────────────────────────────────────────
 // POST: homeroom teacher, admin, coordinator
