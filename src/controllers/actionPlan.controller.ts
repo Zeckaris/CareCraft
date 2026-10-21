@@ -3,7 +3,6 @@ import mongoose from 'mongoose';
 import { ActionPlan } from '../models/actionPlan.model.js';
 import { Student } from '../models/student.model.js';
 import UserAccount from '../models/userAccount.model.js';
-import { BadgeCriteria } from '../models/badgeCriteria.model.js';
 import { sendResponse } from '../utils/sendResponse.util.js'
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import {
@@ -610,18 +609,6 @@ export const deleteActionPlan = async (req: AuthRequest, res: Response): Promise
     const actionPlan = await ActionPlan.findById(id);
     if (!actionPlan) {
       sendResponse(res, 404, false, 'ActionPlan not found');
-      return;
-    }
-
-    // Check if linked to BadgeCriteria
-    const criteriaCount = await BadgeCriteria.countDocuments({ actionPlanId: id });
-    if (criteriaCount > 0) {
-      sendResponse(
-        res,
-        400,
-        false,
-        `Cannot delete action plan: still referenced by ${criteriaCount} badge criteria. Remove those first.`
-      );
       return;
     }
 

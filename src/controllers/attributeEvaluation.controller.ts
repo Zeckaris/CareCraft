@@ -5,7 +5,6 @@ import { Student } from '../models/student.model.js';
 import UserAccount from '../models/userAccount.model.js';
 import { StudentEnrollment } from '../models/studentEnrollment.model.js';
 import { TeachingAssignment } from '../models/teachingAssignment.model.js';
-import { BadgeCriteria } from '../models/badgeCriteria.model.js';
 import { AttributeCategory } from '../models/attributeCategory.model.js';
 import { getCurrentCalendar } from '../service/currentAcademic.service.js';
 import { getYearVariants } from '../utils/yearNormalizer.js';
@@ -617,23 +616,6 @@ export const deleteAttributeEvaluation = async (req: AuthRequest, res: Response)
     const evaluation = await AttributeEvaluation.findById(id);
     if (!evaluation) {
       sendResponse(res, 404, false, 'AttributeEvaluation not found');
-      return;
-    }
-
-    // Check for badge criteria dependencies
-    const criteriaCount = await BadgeCriteria.countDocuments({
-      $or: [
-        { type: 'attributeScore', attributeCategoryId: { $in: evaluation.attributes.map(a => a.attributeId) } },
-        { type: 'attributeEvaluationAverage', studentEnrollmentId: evaluation.studentEnrollmentId }
-      ]
-    });
-    if (criteriaCount > 0) {
-      sendResponse(
-        res,
-        400,
-        false,
-        `Cannot delete evaluation: still referenced by ${criteriaCount} badge criteria. Remove those first.`
-      );
       return;
     }
 

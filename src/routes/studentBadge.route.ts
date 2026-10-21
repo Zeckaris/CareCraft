@@ -14,7 +14,8 @@ const router = express.Router();
 // Parent can read their child's badges; access scoping is done inside the controller
 router.get('/', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher', 'parent'), getAllStudentBadges);
 router.get('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher', 'parent'), getStudentBadgeById);
-// Only homeroom teachers/admins/coordinators may write
+// Homeroom teachers award directly; admins/coordinators have oversight.
+// Awards are term-scoped and only the note may be edited afterwards.
 router.post('/', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), createStudentBadge);
 router.put('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), updateStudentBadge);
 router.delete('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), deleteStudentBadge);

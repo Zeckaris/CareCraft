@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { AttributeCategory } from '../models/attributeCategory.model.js';
 import { FlaggedIssue } from '../models/flaggedIssue.model.js';
+import { BadgeCriteria } from '../models/badgeCriteria.model.js';
 import { sendResponse } from '../utils/sendResponse.util.js';
 
 export const getAllAttributeCategories = async (req: Request, res: Response): Promise<void> => {
@@ -152,8 +153,12 @@ export const deleteAttributeCategory = async (req: Request, res: Response): Prom
     }
 
     const flaggedIssueCount = await FlaggedIssue.countDocuments({ linkedAttribute: id });
+    const badgeCriteriaCount = await BadgeCriteria.countDocuments({
+      attributeCategoryId: id,
+    });
     const dependencies = [];
     if (flaggedIssueCount > 0) dependencies.push(`${flaggedIssueCount} flagged issue(s)`);
+    if (badgeCriteriaCount > 0) dependencies.push(`${badgeCriteriaCount} badge criteria`);
     if (dependencies.length > 0) {
       sendResponse(res, 400, false, `Cannot delete category; it is used by: ${dependencies.join(', ')}.`);
       return;

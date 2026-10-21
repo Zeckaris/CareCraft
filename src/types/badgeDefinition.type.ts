@@ -5,8 +5,16 @@ export interface IBadgeDefinition extends Document {
   name: string
   description: string
   icon?: string
-  level : number
-  criteria: Types.ObjectId[]
+  level: number
+  /**
+   * Grades the badge applies to. Empty means no grade is eligible yet, so the
+   * badge cannot be awarded until an admin lists at least one grade.
+   */
+  eligibleGrades: Types.ObjectId[]
+  /** Reserved for the phase-2 background evaluator. */
+  autoAward: boolean
   createdBy: Types.ObjectId
   createdAt: Date
+  /** Virtual-populated from BadgeCriteria.badgeDefinitionId. */
+  criteria?: any[]
 }
