@@ -32,6 +32,7 @@ import { TeachingAssignment } from '../models/teachingAssignment.model.js'
 import { AcademicTerm } from '../models/academicTerm.model.js'
 import { AcademicCalendar } from '../models/academicCalendar.model.js'
 import { sendResponse } from '../utils/sendResponse.util.js'
+import { calculateAttendanceRate } from '../utils/attendanceRate.util.js'
 import { logAudit } from '../utils/auditLogger.util.js'
 import { queues } from '../redis/queueManager.js'
 import { validateAttendanceDate } from '../service/attendanceDateValidator.js'
@@ -1004,7 +1005,7 @@ export const getSectionAttendanceSummary = async (
         late: r.late,
         excused: r.excused,
         total: r.total,
-        attendanceRate: r.total > 0 ? ((r.present + r.late) / r.total) * 100 : null,
+        attendanceRate: calculateAttendanceRate(r),
       }))
     )
 
@@ -1044,8 +1045,8 @@ async function buildSummary(filter: any) {
     late: r.late,
     excused: r.excused,
     total: r.total,
-    // present + late counts toward attendance rate (late but present)
-    attendanceRate: r.total > 0 ? ((r.present + r.late) / r.total) * 100 : null,
+    // Excused absences are excluded from the denominator (see shared util).
+    attendanceRate: calculateAttendanceRate(r),
   }
 }
 
