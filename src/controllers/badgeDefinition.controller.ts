@@ -5,6 +5,7 @@ import { BadgeCriteria } from '../models/badgeCriteria.model.js'
 import { StudentBadge } from '../models/studentBadge.model.js'
 import { AttributeCategory } from '../models/attributeCategory.model.js'
 import { Grade } from '../models/grade.model.js'
+import { Gift } from '../models/gift.model.js'
 import { sendResponse } from '../utils/sendResponse.util.js'
 import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.util.js'
 import { AUTOMATIC_CRITERIA_TYPES } from '../badges/criteriaRegistry.js'
@@ -23,6 +24,7 @@ const CRITERIA_POPULATE_FIELDS =
   'badgeDefinitionId type attributeCategoryId minScore minPercentage minRecordedSchoolDays minLockedWeightPercentage minEvaluationCount subjectId mode minDays minPoints scope description createdAt'
 
 const HOW_TO_EARN_MAX_LENGTH = 500
+const GIFT_POPULATE_FIELDS = 'name description image isActive'
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -74,6 +76,41 @@ function parseLevel(value: unknown): number | null {
   const parsed = Number(value)
   if (!Number.isInteger(parsed) || parsed < 1) return null
   return parsed
+}
+
+function parseGiftId(
+  value: unknown
+): { value?: mongoose.Types.ObjectId | null; error?: string } {
+  if (value === undefined) return {}
+  if (value === null || value === '' || value === 'null') {
+    return { value: null }
+  }
+  if (
+    typeof value !== 'string' &&
+    !(value instanceof mongoose.Types.ObjectId)
+  ) {
+    return { error: 'giftId must be a valid gift ID or empty' }
+  }
+  const id = String(value)
+  if (!mongoose.isValidObjectId(id)) {
+    return { error: 'Invalid giftId' }
+  }
+  return { value: new mongoose.Types.ObjectId(id) }
+}
+
+function parseGiftQuantity(
+  value: unknown
+): { value?: number | null; error?: string } {
+  if (value === undefined) return {}
+  if (value === null || value === '') return { value: null }
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return { error: 'giftQuantity must be a whole number between 1 and 100' }
+  }
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) {
+    return { error: 'giftQuantity must be a whole number between 1 and 100' }
+  }
+  return { value: parsed }
 }
 
 async function resolveEligibleGrades(
@@ -197,6 +234,7 @@ export const getAllBadgeDefinitions = async (
   try {
     const badges = await BadgeDefinition.find(filter)
       .populate('criteria', CRITERIA_POPULATE_FIELDS)
+      .populate('giftId', GIFT_POPULATE_FIELDS)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
@@ -236,6 +274,7 @@ export const getBadgeDefinitionById = async (
     const badge = await BadgeDefinition.findById(id)
       .populate('criteria', CRITERIA_POPULATE_FIELDS)
       .populate('eligibleGrades', 'level description')
+      .populate('giftId', GIFT_POPULATE_FIELDS)
     if (!badge) {
       sendResponse(res, 404, false, 'BadgeDefinition not found')
       return
@@ -259,7 +298,7 @@ export const createBadgeDefinition = async (
   req: AuthRequest,
   res: Response
 ): Promise<void> => {
-  const { name, description, howToEarn, level, criteria, eligibleGrades, autoAward } =
+  const { name, description, howToEarn, level, criteria, eligibleGrades, autoAward, giftId, giftQuantity } =
     req.body
 
   const trimmedName = typeof name === 'string' ? name.trim() : ''
@@ -325,6 +364,43 @@ export const createBadgeDefinition = async (
     return
   }
 
+  const parsedGiftId = parseGiftId(giftId)
+  if (parsedGiftId.error) {
+    sendResponse(res, 400, false, parsedGiftId.error)
+    return
+  }
+  const parsedGiftQuantity = parseGiftQuantity(giftQuantity)
+  if (parsedGiftQuantity.error) {
+    sendResponse(res, 400, false, parsedGiftQuantity.error)
+    return
+  }
+  if (parsedGiftId.value) {
+    if (parsedGiftQuantity.value === undefined || parsedGiftQuantity.value === null) {
+      sendResponse(
+        res,
+        400,
+        false,
+        'giftQuantity is required when giftId is set'
+      )
+      return
+    }
+    const gift = await Gift.findById(parsedGiftId.value)
+    if (!gift) {
+      sendResponse(res, 404, false, 'Gift not found')
+      return
+    }
+    if (!gift.isActive) {
+      sendResponse(res, 400, false, 'Cannot attach an inactive gift')
+      return
+    }
+  } else if (
+    parsedGiftQuantity.value !== undefined &&
+    parsedGiftQuantity.value !== null
+  ) {
+    sendResponse(res, 400, false, 'giftQuantity cannot be set without giftId')
+    return
+  }
+
   try {
     const existing = await BadgeDefinition.findOne({
       name: trimmedName,
@@ -359,6 +435,8 @@ export const createBadgeDefinition = async (
       eligibleGrades: gradeResult.ids ?? [],
       autoAward: false,
       icon,
+      giftId: parsedGiftId.value ?? null,
+      giftQuantity: parsedGiftId.value ? parsedGiftQuantity.value ?? null : null,
       createdBy,
     })
 
@@ -367,6 +445,7 @@ export const createBadgeDefinition = async (
     const populated = await BadgeDefinition.findById(badge._id)
       .populate('criteria', CRITERIA_POPULATE_FIELDS)
       .populate('eligibleGrades', 'level description')
+      .populate('giftId', GIFT_POPULATE_FIELDS)
       .populate('createdBy', 'firstName lastName email role')
 
     sendResponse(res, 201, true, 'Badge definition created successfully', populated)
@@ -404,7 +483,7 @@ export const updateBadgeDefinition = async (
     return
   }
 
-  const { name, description, howToEarn, level, criteria, eligibleGrades, autoAward } =
+  const { name, description, howToEarn, level, criteria, eligibleGrades, autoAward, giftId, giftQuantity } =
     req.body
 
   const hasName = name !== undefined
@@ -414,6 +493,8 @@ export const updateBadgeDefinition = async (
   const hasCriteria = criteria !== undefined
   const hasEligibleGrades = eligibleGrades !== undefined
   const hasAutoAward = autoAward !== undefined
+  const hasGiftId = giftId !== undefined
+  const hasGiftQuantity = giftQuantity !== undefined
 
   if (
     !hasName &&
@@ -423,13 +504,15 @@ export const updateBadgeDefinition = async (
     !hasCriteria &&
     !hasEligibleGrades &&
     !hasAutoAward &&
+    !hasGiftId &&
+    !hasGiftQuantity &&
     !req.file
   ) {
     sendResponse(
       res,
       400,
       false,
-      'At least one field (name, description, howToEarn, level, criteria, eligibleGrades, autoAward, or icon) required'
+      'At least one field (name, description, howToEarn, level, criteria, eligibleGrades, autoAward, giftId, giftQuantity, or icon) required'
     )
     return
   }
@@ -560,6 +643,84 @@ export const updateBadgeDefinition = async (
       updateData.eligibleGrades = gradeResult.ids ?? []
     }
 
+    if (hasGiftId || hasGiftQuantity) {
+      let nextGiftId: mongoose.Types.ObjectId | null = badge.giftId ?? null
+      let nextGiftQuantity: number | null = badge.giftQuantity ?? null
+      let giftChanged = false
+
+      if (hasGiftId) {
+        const parsedGiftId = parseGiftId(giftId)
+        if (parsedGiftId.error) {
+          sendResponse(res, 400, false, parsedGiftId.error)
+          return
+        }
+        const candidate = parsedGiftId.value ?? null
+        giftChanged = String(badge.giftId ?? '') !== String(candidate ?? '')
+        nextGiftId = candidate
+      }
+
+      if (nextGiftId) {
+        const parsedGiftQuantity = parseGiftQuantity(giftQuantity)
+        if (parsedGiftQuantity.error) {
+          sendResponse(res, 400, false, parsedGiftQuantity.error)
+          return
+        }
+        if (hasGiftQuantity) {
+          nextGiftQuantity = parsedGiftQuantity.value ?? null
+        }
+        if (
+          nextGiftQuantity === null ||
+          !Number.isInteger(nextGiftQuantity) ||
+          nextGiftQuantity < 1 ||
+          nextGiftQuantity > 100
+        ) {
+          sendResponse(
+            res,
+            400,
+            false,
+            'giftQuantity is required when giftId is set and must be a whole number between 1 and 100'
+          )
+          return
+        }
+
+        const gift = await Gift.findById(nextGiftId)
+        if (!gift) {
+          sendResponse(res, 404, false, 'Gift not found')
+          return
+        }
+        if (giftChanged && !gift.isActive) {
+          sendResponse(res, 400, false, 'Cannot attach an inactive gift')
+          return
+        }
+      } else {
+        if (!hasGiftId) {
+          const parsedGiftQuantity = parseGiftQuantity(giftQuantity)
+          if (parsedGiftQuantity.error) {
+            sendResponse(res, 400, false, parsedGiftQuantity.error)
+            return
+          }
+          if (
+            parsedGiftQuantity.value !== undefined &&
+            parsedGiftQuantity.value !== null
+          ) {
+            sendResponse(
+              res,
+              400,
+              false,
+              'giftQuantity cannot be set without giftId'
+            )
+            return
+          }
+        }
+        nextGiftQuantity = null
+      }
+
+      if (giftChanged) updateData.giftId = nextGiftId
+      if (nextGiftQuantity !== (badge.giftQuantity ?? null)) {
+        updateData.giftQuantity = nextGiftQuantity
+      }
+    }
+
     if (req.file) {
       deleteIcon(badge.icon, 'old')
       const uploadResult = await uploadToCloudinary(
@@ -576,6 +737,7 @@ export const updateBadgeDefinition = async (
     })
       .populate('criteria', CRITERIA_POPULATE_FIELDS)
       .populate('eligibleGrades', 'level description')
+      .populate('giftId', GIFT_POPULATE_FIELDS)
       .populate('createdBy', 'firstName lastName email role')
 
     await enqueueBadgeEvaluationForBadge(id)
