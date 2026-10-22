@@ -1,16 +1,18 @@
 /**
  * Single source of truth for badge criteria types and scopes.
  *
- * Phase 1 only stores and validates criteria. Evaluation is intentionally out
- * of scope until phase 2, so `isAutomatic` describes whether a future
- * evaluator could award the badge without a manual action.
+ * Every criteria type is automatic: a badge with no criteria is
+ * teacher-awarded only, and a badge that has criteria is evaluated by the
+ * background worker.
  */
 
 export const BADGE_CRITERIA_TYPES = [
   'attributeAverage',
   'attendanceRate',
+  'attendanceStreak',
   'academicAverage',
-  'custom',
+  'academicImprovement',
+  'academicConsistency',
 ] as const
 
 export type BadgeCriteriaType = (typeof BADGE_CRITERIA_TYPES)[number]
@@ -19,31 +21,41 @@ export const BADGE_CRITERIA_SCOPES = ['term', 'year'] as const
 
 export type BadgeCriteriaScope = (typeof BADGE_CRITERIA_SCOPES)[number]
 
+export const BADGE_STREAK_MODES = ['noAbsence', 'onTime'] as const
+
+export type BadgeStreakMode = (typeof BADGE_STREAK_MODES)[number]
+
 export const BADGE_CRITERIA_TYPE_LABELS: Record<BadgeCriteriaType, string> = {
   attributeAverage: 'Attribute evaluation average',
   attendanceRate: 'Attendance rate',
+  attendanceStreak: 'Attendance streak',
   academicAverage: 'Academic average',
-  custom: 'Custom (manual)',
+  academicImprovement: 'Academic improvement',
+  academicConsistency: 'Academic consistency',
 }
 
 /**
- * Semantics reserved for the phase-2 evaluator. Kept next to the type list so
- * validation and evaluation cannot drift apart.
+ * Semantics shared by validation, the evaluator and the frontend contract.
  */
 export const BADGE_CRITERIA_TYPE_DESCRIPTIONS: Record<BadgeCriteriaType, string> = {
   attributeAverage:
     'Average attribute evaluation score, optionally limited to one category; blank category means all categories. Requires minEvaluationCount evaluations in the window.',
   attendanceRate:
-    'Attendance percentage where excused absences are excluded from the denominator and late still counts as attended. Requires minRecordedSchoolDays recorded school days in the window.',
+    'Attendance percentage for badge evaluation where excused absences count as absences. Requires minRecordedSchoolDays recorded school days in the window.',
+  attendanceStreak:
+    'Longest run of recorded school days without an absence (noAbsence) or without a late arrival and without an absence (onTime) in the current term. Days with no record are skipped.',
   academicAverage:
-    'Average percentage across locked assessment stages only, matching the dashboard rule. Requires minLockedWeightPercentage of the total assessment weight to be locked in the window.',
-  custom: 'Manually awarded by a homeroom teacher or administrator; never auto-awarded.',
+    'Average percentage across locked assessment stages. Only evaluated once every assessment stage in the relevant setup is locked for every term in scope.',
+  academicImprovement:
+    'Percentage-point change in the overall academic average between the current term and the previous term of the same academic year. Both terms must be fully locked.',
+  academicConsistency:
+    'Every subject with a setup for the current term is fully locked and the student average in each of those subjects is at least minPercentage.',
 }
 
 /**
  * Minimum-data defaults applied by the phase-1 migration to existing automatic
- * criteria that predate the minimum-data guard. New criteria must supply the
- * value explicitly.
+ * criteria that predate the minimum-data guard. Kept for the phase-1 migration;
+ * academicAverage no longer uses minLockedWeightPercentage.
  */
 export const BADGE_CRITERIA_MIN_DATA_DEFAULTS = {
   attributeAverage: { minEvaluationCount: 3 },
@@ -56,11 +68,14 @@ export const BADGE_CRITERIA_SCOPE_LABELS: Record<BadgeCriteriaScope, string> = {
   year: 'Current school year',
 }
 
-/** Types a background evaluator may award automatically in phase 2. */
+export const BADGE_STREAK_MODE_LABELS: Record<BadgeStreakMode, string> = {
+  noAbsence: 'No absence',
+  onTime: 'On time (no late arrival and no absence)',
+}
+
+/** Every criteria type can be awarded automatically. */
 export const AUTOMATIC_CRITERIA_TYPES: readonly BadgeCriteriaType[] = [
-  'attributeAverage',
-  'attendanceRate',
-  'academicAverage',
+  ...BADGE_CRITERIA_TYPES,
 ]
 
 export function isBadgeCriteriaType(value: unknown): value is BadgeCriteriaType {
@@ -77,8 +92,17 @@ export function isBadgeCriteriaScope(value: unknown): value is BadgeCriteriaScop
   )
 }
 
+export function isBadgeStreakMode(value: unknown): value is BadgeStreakMode {
+  return (
+    typeof value === 'string' &&
+    (BADGE_STREAK_MODES as readonly string[]).includes(value)
+  )
+}
+
 export function isAutomaticCriteriaType(type: BadgeCriteriaType): boolean {
   return AUTOMATIC_CRITERIA_TYPES.includes(type)
 }
 
 export const BADGE_CRITERIA_TYPE_LIST = BADGE_CRITERIA_TYPES.join(', ')
+
+export const BADGE_STREAK_MODE_LIST = BADGE_STREAK_MODES.join(', ')

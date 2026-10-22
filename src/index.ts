@@ -64,7 +64,7 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        console.warn(`CORS blocked origin: ${origin}`); 
+        console.warn(`CORS blocked origin: ${origin}`);
         callback(new Error('Not allowed by CORS'));
       }
     },
@@ -98,7 +98,7 @@ app.use('/api/studentBadge', studentBadgeRouter);
 app.use('/api/actionPlan', actionPlanRouter);
 app.use('/api/sharedPlanTemplate', sharedPlanTemplateRouter);
 app.use('/api/adminUser', adminUserRouter);
-app.use('/api/dashboard', dashboardRouter); 
+app.use('/api/dashboard', dashboardRouter);
 app.use('/api/calendar', academicCalendarRouter);
 app.use('/api/term', academicTermRouter);
 app.use('/api/assessment/conducted', conductedAssessmentRouter);
@@ -111,7 +111,7 @@ app.use('/api/attendance', attendanceRouter);
 app.use('/api/schedule', scheduleRouter);
 
 // ===== DB + Server Start =====
-connectDB().then(() => {
+connectDB().then(async () => {
   const port = Number(process.env.PORT) || 3000;
 
   app.listen(port, '0.0.0.0', () => {
@@ -123,6 +123,16 @@ connectDB().then(() => {
 
   // Any generation jobs left queued/running belong to a previous process.
   void recoverStaleGenerationJobs();
+
+  // The badge worker is intentionally started here, after MongoDB is ready.
+  try {
+    const { startBadgeEvaluationWorker } = await import(
+      './workers/badgeEvaluation.worker.js'
+    );
+    await startBadgeEvaluationWorker();
+  } catch (error) {
+    console.error('Failed to start badge evaluation worker:', error);
+  }
 });
 
 // ===== Background Tasks =====
