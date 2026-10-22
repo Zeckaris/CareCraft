@@ -4,6 +4,11 @@ import { Section } from '../models/section.model.js'
 import { Grade } from '../models/grade.model.js'
 import { StudentEnrollment } from '../models/studentEnrollment.model.js'
 import { TeachingAssignment } from '../models/teachingAssignment.model.js'
+import { Attendance } from '../models/attendance.model.js'
+import { AssessmentScore } from '../models/assessment/assessmentScore.model.js'
+import { ConductedAssessment } from '../models/ConductedAssessment.model.js'
+import { ScheduleEntry } from '../models/scheduleEntry.model.js'
+import { guardDeleteReferences, ReferenceCheck } from '../utils/referenceGuard.util.js'
 import { sendResponse } from '../utils/sendResponse.util.js'
 import { getTeacherSectionIds } from '../middlewares/access.middleware.js'
 import { getYearVariants, normalizeYear, yearsMatch } from '../utils/yearNormalizer.js'
@@ -294,23 +299,32 @@ export const deleteSection = async (req: Request, res: Response): Promise<void> 
       return
     }
 
-    const { activeEnrollmentCount, inactiveEnrollmentCount, teachingAssignmentCount } =
-      await getSectionReferences(section._id)
+    const referenceChecks: ReferenceCheck[] = [
+      {
+        model: StudentEnrollment,
+        field: 'sectionId',
+        filter: { isActive: true },
+        label: 'active enrollment(s)',
+      },
+      {
+        model: StudentEnrollment,
+        field: 'sectionId',
+        filter: { isActive: false },
+        label: 'inactive enrollment(s)',
+      },
+      { model: TeachingAssignment, field: 'sectionId', label: 'teaching assignment(s)' },
+      { model: Attendance, field: 'sectionId', label: 'attendance record(s)' },
+      { model: AssessmentScore, field: 'sectionId', label: 'assessment score(s)' },
+      { model: ConductedAssessment, field: 'sectionId', label: 'conducted assessment(s)' },
+      {
+        model: ScheduleEntry,
+        field: 'sectionId',
+        label: 'schedule entry(ies)',
+        excludeArchivedSchedules: true,
+      },
+    ]
 
-    const blockers: string[] = []
-    if (activeEnrollmentCount > 0) blockers.push(`${activeEnrollmentCount} enrollment(s)`)
-    if (inactiveEnrollmentCount > 0) blockers.push(`${inactiveEnrollmentCount} inactive enrollment(s)`)
-    if (teachingAssignmentCount > 0) blockers.push(`${teachingAssignmentCount} teaching assignment(s)`)
-
-    if (blockers.length > 0) {
-      sendResponse(
-        res,
-        400,
-        false,
-        `Cannot delete section: still referenced by ${blockers.join(', ')}. Remove those records first.`
-      )
-      return
-    }
+    if (await guardDeleteReferences(res, 'section', id, referenceChecks)) return
 
     await Section.findByIdAndDelete(id)
     sendResponse(res, 200, true, 'Section deleted successfully')

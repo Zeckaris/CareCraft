@@ -1,5 +1,12 @@
 import { Request, Response } from "express"
 import { Subject } from '../../models/subject.model.js'
+import { GradeSubjectAssessment } from '../../models/gradeSubjectAssessment.model.js'
+import { TeachingAssignment } from '../../models/teachingAssignment.model.js'
+import { ScheduleEntry } from '../../models/scheduleEntry.model.js'
+import { WeeklyPeriodRequirement } from '../../models/weeklyPeriodRequirement.model.js'
+import { BadgeCriteria } from '../../models/badgeCriteria.model.js'
+import { Observation } from '../../models/observation.model.js'
+import { guardDeleteReferences, ReferenceCheck } from '../../utils/referenceGuard.util.js'
 import { sendResponse } from '../../utils/sendResponse.util.js'
 
 export const createSubject = async (req: Request, res: Response): Promise<void> => {
@@ -100,11 +107,29 @@ export const deleteSubject = async (req: Request, res: Response): Promise<void> 
     }
 
     try {
-        const subject = await Subject.findByIdAndDelete(id)
+        const subject = await Subject.findById(id)
         if (!subject) {
             sendResponse(res, 404, false, "Subject not found")
             return
         }
+
+        const referenceChecks: ReferenceCheck[] = [
+            { model: GradeSubjectAssessment, field: 'subjectId', label: 'grade-subject assessment(s)' },
+            { model: TeachingAssignment, field: 'subjectId', label: 'teaching assignment(s)' },
+            {
+                model: ScheduleEntry,
+                field: 'subjectId',
+                label: 'schedule entry(ies)',
+                excludeArchivedSchedules: true,
+            },
+            { model: WeeklyPeriodRequirement, field: 'subjectId', label: 'weekly period requirement(s)' },
+            { model: BadgeCriteria, field: 'subjectId', label: 'badge criterion(s)' },
+            { model: Observation, field: 'subjectId', label: 'observation(s)' },
+        ]
+
+        if (await guardDeleteReferences(res, 'subject', id, referenceChecks)) return
+
+        await Subject.findByIdAndDelete(id)
         sendResponse(res, 200, true, "Subject deleted successfully")
     } catch (error) {
         sendResponse(res, 500, false, "Internal server error", null, error)

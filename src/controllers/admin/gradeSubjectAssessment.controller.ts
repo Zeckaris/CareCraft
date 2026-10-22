@@ -4,6 +4,9 @@ import { GradeSubjectAssessment } from '../../models/gradeSubjectAssessment.mode
 import { AssessmentSetup } from '../../models/assessment/assessmentSetup.model.js'
 import { Subject } from '../../models/subject.model.js'
 import { Grade } from '../../models/grade.model.js'
+import { AssessmentScore } from '../../models/assessment/assessmentScore.model.js'
+import { ConductedAssessment } from '../../models/ConductedAssessment.model.js'
+import { guardDeleteReferences, ReferenceCheck } from '../../utils/referenceGuard.util.js'
 import { sendResponse } from '../../utils/sendResponse.util.js'
 import { recalcMarksheetsForGsa } from '../../service/assessmentScore.service.js'
 
@@ -234,12 +237,20 @@ export const deleteGradeSubjectAssessment = async (req: Request, res: Response):
     const { id } = req.params
     
     try {
-        const gsa = await GradeSubjectAssessment.findByIdAndDelete(id)
+        const gsa = await GradeSubjectAssessment.findById(id)
         if (!gsa) {
             sendResponse(res, 404, false, "Grade-Subject assessment not found")
             return
         }
-        
+
+        const referenceChecks: ReferenceCheck[] = [
+            { model: AssessmentScore, field: 'gsaId', label: 'assessment score(s)' },
+            { model: ConductedAssessment, field: 'gsaId', label: 'conducted assessment(s)' },
+        ]
+
+        if (await guardDeleteReferences(res, 'grade-subject assessment', id, referenceChecks)) return
+
+        await GradeSubjectAssessment.findByIdAndDelete(id)
         sendResponse(res, 200, true, "Grade-Subject assessment deleted")
     } catch (error) {
         sendResponse(res, 500, false, "Internal server error", null, error)

@@ -5,6 +5,10 @@ import { Types } from "mongoose"
 import { StudentEnrollment } from '../../models/studentEnrollment.model.js'
 import { Section } from '../../models/section.model.js'
 import { GradeSubjectAssessment } from '../../models/gradeSubjectAssessment.model.js'
+import { BadgeDefinition } from '../../models/badgeDefinition.model.js'
+import { ScheduleEntry } from '../../models/scheduleEntry.model.js'
+import { WeeklyPeriodRequirement } from '../../models/weeklyPeriodRequirement.model.js'
+import { guardDeleteReferences, ReferenceCheck } from '../../utils/referenceGuard.util.js'
 
 
 export const createGrade= async (req:Request, res:Response):Promise<void> =>{
@@ -121,29 +125,40 @@ export const deleteGrade = async (req: Request, res: Response): Promise<void> =>
       return
     }
 
-    const [activeEnrollmentCount, inactiveEnrollmentCount, sectionCount, gsaCount] =
-      await Promise.all([
-        StudentEnrollment.countDocuments({ gradeId: id, isActive: true }),
-        StudentEnrollment.countDocuments({ gradeId: id, isActive: false }),
-        Section.countDocuments({ gradeId: id }),
-        GradeSubjectAssessment.countDocuments({ gradeId: id }),
-      ])
+    const referenceChecks: ReferenceCheck[] = [
+      {
+        model: StudentEnrollment,
+        field: 'gradeId',
+        filter: { isActive: true },
+        label: 'active enrollment(s)',
+      },
+      {
+        model: StudentEnrollment,
+        field: 'gradeId',
+        filter: { isActive: false },
+        label: 'inactive enrollment(s)',
+      },
+      { model: Section, field: 'gradeId', label: 'section(s)' },
+      {
+        model: GradeSubjectAssessment,
+        field: 'gradeId',
+        label: 'grade-subject assessment(s)',
+      },
+      { model: BadgeDefinition, field: 'eligibleGrades', label: 'badge definition(s)' },
+      {
+        model: ScheduleEntry,
+        field: 'gradeId',
+        label: 'schedule entry(ies)',
+        excludeArchivedSchedules: true,
+      },
+      {
+        model: WeeklyPeriodRequirement,
+        field: 'gradeId',
+        label: 'weekly period requirement(s)',
+      },
+    ]
 
-    const blockers: string[] = []
-    if (activeEnrollmentCount > 0) blockers.push(`${activeEnrollmentCount} enrollment(s)`)
-    if (inactiveEnrollmentCount > 0) blockers.push(`${inactiveEnrollmentCount} inactive enrollment(s)`)
-    if (sectionCount > 0) blockers.push(`${sectionCount} section(s)`)
-    if (gsaCount > 0) blockers.push(`${gsaCount} grade-subject assessment(s)`)
-
-    if (blockers.length > 0) {
-      sendResponse(
-        res,
-        400,
-        false,
-        `Cannot delete "${grade.level}". It is still referenced by ${blockers.join(', ')}. Remove those records first.`
-      )
-      return
-    }
+    if (await guardDeleteReferences(res, 'grade', id, referenceChecks)) return
 
     await Grade.findByIdAndDelete(id)
     sendResponse(res, 200, true, 'Grade deleted successfully')
@@ -152,4 +167,4 @@ export const deleteGrade = async (req: Request, res: Response): Promise<void> =>
     sendResponse(res, 500, false, 'Internal server error', null, error)
     return
   }
-}
+}

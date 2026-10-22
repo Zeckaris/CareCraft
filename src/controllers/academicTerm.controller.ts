@@ -5,6 +5,16 @@ import { AcademicCalendar } from '../models/academicCalendar.model.js';
 import { AssessmentScore } from '../models/assessment/assessmentScore.model.js';
 import { ConductedAssessment } from '../models/ConductedAssessment.model.js';
 import { Attendance } from '../models/attendance.model.js';
+import { AttributeEvaluation } from '../models/attributeEvaluation.model.js';
+import { BadgeAwardSuppression } from '../models/badgeAwardSuppression.model.js';
+import { Observation } from '../models/observation.model.js';
+import { StudentBadge } from '../models/studentBadge.model.js';
+import {
+  collectReferenceBlockers,
+  formatReferenceCounts,
+  guardDeleteReferences,
+  type ReferenceCheck,
+} from '../utils/referenceGuard.util.js';
 import { sendResponse } from '../utils/sendResponse.util.js';
 import {
   getSchoolTimezone,
@@ -36,15 +46,15 @@ function parseRequiredDate(value: unknown, timeZone: string): Date | null {
   return normalizeSchoolDateInput(value, timeZone);
 }
 
-async function countTermReferences(termId: any) {
-  const [assessmentScores, conductedAssessments, attendanceRecords] =
-    await Promise.all([
-      AssessmentScore.countDocuments({ academicTermId: termId }),
-      ConductedAssessment.countDocuments({ academicTermId: termId }),
-      Attendance.countDocuments({ academicTermId: termId }),
-    ]);
-  return { assessmentScores, conductedAssessments, attendanceRecords };
-}
+const TERM_REFERENCE_CHECKS: ReferenceCheck[] = [
+  { model: AssessmentScore, field: 'academicTermId', label: 'assessment score(s)' },
+  { model: ConductedAssessment, field: 'academicTermId', label: 'conducted assessment(s)' },
+  { model: Attendance, field: 'academicTermId', label: 'attendance record(s)' },
+  { model: AttributeEvaluation, field: 'academicTermId', label: 'attribute evaluation(s)' },
+  { model: BadgeAwardSuppression, field: 'academicTermId', label: 'badge award suppression(s)' },
+  { model: Observation, field: 'term', label: 'observation(s)' },
+  { model: StudentBadge, field: 'academicTermId', label: 'student badge(s)' },
+];
 
 async function findOverlappingTerm(
   calendarId: any,
@@ -325,23 +335,13 @@ export const updateTerm = async (req: Request, res: Response) => {
 
     const relinking = String(targetCalendarId) !== String(term.calendarId);
     if (relinking) {
-      const refs = await countTermReferences(term._id);
-      const blockers: string[] = [];
-      if (refs.assessmentScores > 0) {
-        blockers.push(`${refs.assessmentScores} assessment score(s)`);
-      }
-      if (refs.conductedAssessments > 0) {
-        blockers.push(`${refs.conductedAssessments} conducted assessment(s)`);
-      }
-      if (refs.attendanceRecords > 0) {
-        blockers.push(`${refs.attendanceRecords} attendance record(s)`);
-      }
+      const blockers = await collectReferenceBlockers(term._id, TERM_REFERENCE_CHECKS);
       if (blockers.length > 0) {
         return sendResponse(
           res,
           400,
           false,
-          `Cannot move term to another calendar: still referenced by ${blockers.join(', ')}.`
+          `Cannot move term to another calendar: still referenced by ${formatReferenceCounts(blockers)}.`
         );
       }
     }
@@ -470,26 +470,7 @@ export const deleteTerm = async (req: Request, res: Response) => {
     const term = await AcademicTerm.findById(req.params.id);
     if (!term) return sendResponse(res, 404, false, "Term not found");
 
-    const refs = await countTermReferences(term._id);
-    const blockers: string[] = [];
-    if (refs.assessmentScores > 0) {
-      blockers.push(`${refs.assessmentScores} assessment score(s)`);
-    }
-    if (refs.conductedAssessments > 0) {
-      blockers.push(`${refs.conductedAssessments} conducted assessment(s)`);
-    }
-    if (refs.attendanceRecords > 0) {
-      blockers.push(`${refs.attendanceRecords} attendance record(s)`);
-    }
-
-    if (blockers.length > 0) {
-      return sendResponse(
-        res,
-        400,
-        false,
-        `Cannot delete term "${term.name}". It is still referenced by ${blockers.join(', ')}. Remove those records first.`
-      );
-    }
+    if (await guardDeleteReferences(res, 'term', term._id, TERM_REFERENCE_CHECKS)) return;
 
     await AcademicTerm.deleteOne({ _id: term._id });
     sendResponse(res, 200, true, "Term deleted");

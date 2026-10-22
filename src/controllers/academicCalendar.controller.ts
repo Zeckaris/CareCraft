@@ -5,6 +5,7 @@ import { AcademicTerm } from '../models/academicTerm.model.js';
 import { Section } from '../models/section.model.js';
 import { StudentEnrollment } from '../models/studentEnrollment.model.js';
 import { Schedule } from '../models/schedule.model.js';
+import { guardDeleteReferences, type ReferenceCheck } from '../utils/referenceGuard.util.js';
 import { sendResponse } from '../utils/sendResponse.util.js';
 import { getYearVariants, normalizeYear } from '../utils/yearNormalizer.js';
 import {
@@ -590,27 +591,34 @@ export const deleteCalendar = async (req: Request, res: Response) => {
 
     const year = normalizeYear(String(calendar.academicYear));
     const variants = getYearVariants(year);
-    const [termCount, sectionCount, enrollmentCount, scheduleCount] =
-      await Promise.all([
-        AcademicTerm.countDocuments({ calendarId: calendar._id }),
-        Section.countDocuments({ schoolYear: { $in: variants } }),
-        StudentEnrollment.countDocuments({ schoolYear: { $in: variants } }),
-        Schedule.countDocuments({ schoolYear: { $in: variants } }),
-      ]);
+    const referenceChecks: ReferenceCheck[] = [
+      { model: AcademicTerm, field: 'calendarId', label: 'term(s)' },
+      {
+        model: Section,
+        filter: { schoolYear: { $in: variants } },
+        label: 'section(s)',
+      },
+      {
+        model: StudentEnrollment,
+        filter: { schoolYear: { $in: variants } },
+        label: 'enrollment(s)',
+      },
+      {
+        model: Schedule,
+        filter: { schoolYear: { $in: variants } },
+        label: 'schedule(s)',
+      },
+    ];
 
-    const blockers: string[] = [];
-    if (termCount > 0) blockers.push(`${termCount} term(s)`);
-    if (sectionCount > 0) blockers.push(`${sectionCount} section(s)`);
-    if (enrollmentCount > 0) blockers.push(`${enrollmentCount} enrollment(s)`);
-    if (scheduleCount > 0) blockers.push(`${scheduleCount} schedule(s)`);
-
-    if (blockers.length > 0) {
-      return sendResponse(
+    if (
+      await guardDeleteReferences(
         res,
-        400,
-        false,
-        `Cannot delete "${calendar.academicYear}". It is still referenced by ${blockers.join(', ')}. Remove those records first.`
-      );
+        `calendar "${calendar.academicYear}"`,
+        calendar._id,
+        referenceChecks
+      )
+    ) {
+      return;
     }
 
     await AcademicCalendar.deleteOne({ _id: calendar._id });
