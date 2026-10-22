@@ -24,6 +24,10 @@ import { logAudit } from '../../utils/auditLogger.util.js'
 import { AuthRequest } from '../../middlewares/auth.middleware.js'
 import { getCurrentTerm } from '../../service/currentAcademic.service.js'
 import {
+  enqueueSectionBadgeEvaluation,
+  enqueueStudentBadgeEvaluations,
+} from '../../service/badgeEvaluationQueue.service.js'
+import {
   AssessmentError,
   resolveAssessmentContext,
   isSubjectTeacherForSection,
@@ -392,6 +396,12 @@ export const writeScores = async (req: AuthRequest, res: Response): Promise<void
       records as StageSubmissionRecord[]
     )
 
+    await enqueueStudentBadgeEvaluations(
+      outcomes
+        .filter((outcome) => ['created', 'updated'].includes(outcome.action))
+        .map((outcome) => outcome.studentId)
+    )
+
     sendResponse(res, 200, true, 'Scores saved', {
       sectionId,
       subjectId,
@@ -519,6 +529,8 @@ export const completeStage = async (req: AuthRequest, res: Response): Promise<vo
       await conducted.save()
     }
 
+    await enqueueSectionBadgeEvaluation(String(ctx.section._id))
+
     sendResponse(res, 200, true, alreadyLocked ? 'Stage already locked' : 'Stage completed and locked', {
       sectionId: String(ctx.section._id),
       subjectId,
@@ -586,6 +598,8 @@ export const reopenStage = async (req: AuthRequest, res: Response): Promise<void
       entity: 'ConductedAssessment',
       target: String(conducted._id),
     })
+
+    await enqueueSectionBadgeEvaluation(String(ctx.section._id))
 
     sendResponse(res, 200, true, 'Stage reopened', {
       sectionId: String(ctx.section._id),
@@ -718,6 +732,9 @@ export const updateAssessmentScore = async (req: AuthRequest, res: Response): Pr
     )
 
     const outcome = outcomes[0]
+    if (outcome && ['created', 'updated'].includes(outcome.action)) {
+      await enqueueStudentBadgeEvaluations([outcome.studentId])
+    }
     const status = outcome.action === 'conflict' ? 409 : outcome.action === 'rejected' ? 400 : 200
     sendResponse(res, status, status === 200, `Score ${outcome.action}`, outcome)
   } catch (error) {
@@ -781,6 +798,7 @@ export const deleteAssessmentScore = async (req: AuthRequest, res: Response): Pr
         .join(' ') || 'Unknown student'
 
     await AssessmentScore.findByIdAndDelete(id)
+    await enqueueStudentBadgeEvaluations([String(doc.studentId)])
     await logAudit(req, {
       type: 'ASSESSMENT_SCORE_WRITE',
       message: `Deleted marksheet for ${studentName} in section ${ctx.section.name} for ${ctx.subjectName} (${ctx.term.name})`,

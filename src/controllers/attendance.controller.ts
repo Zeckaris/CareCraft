@@ -36,6 +36,7 @@ import { calculateAttendanceRate } from '../utils/attendanceRate.util.js'
 import { logAudit } from '../utils/auditLogger.util.js'
 import { queues } from '../redis/queueManager.js'
 import { validateAttendanceDate } from '../service/attendanceDateValidator.js'
+import { enqueueStudentBadgeEvaluations } from '../service/badgeEvaluationQueue.service.js'
 import { loadSchoolDayContext } from '../service/schoolDay.service.js'
 import { getYearVariants, normalizeYear, yearsMatch } from '../utils/yearNormalizer.js'
 import { isSchoolDateString, toSchoolDateString } from '../utils/schoolDate.util.js'
@@ -563,6 +564,11 @@ export const upsertSectionAttendance = async (
       }
     }
   }
+
+  const changedStudentIds = results
+    .filter((result) => result && ['created', 'updated'].includes(result.action))
+    .map((result) => result.studentId)
+  await enqueueStudentBadgeEvaluations(changedStudentIds)
 
   sendResponse(res, 200, true, 'Attendance saved successfully', { date, results })
 }

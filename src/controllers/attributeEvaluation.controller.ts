@@ -6,7 +6,8 @@ import UserAccount from '../models/userAccount.model.js';
 import { StudentEnrollment } from '../models/studentEnrollment.model.js';
 import { TeachingAssignment } from '../models/teachingAssignment.model.js';
 import { AttributeCategory } from '../models/attributeCategory.model.js';
-import { getCurrentCalendar } from '../service/currentAcademic.service.js';
+import { getCurrentCalendar, getCurrentTerm } from '../service/currentAcademic.service.js';
+import { enqueueStudentBadgeEvaluations } from '../service/badgeEvaluationQueue.service.js';
 import { getYearVariants } from '../utils/yearNormalizer.js';
 import { sendResponse } from '../utils/sendResponse.util.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
@@ -371,11 +372,13 @@ export const createAttributeEvaluation = async (req: AuthRequest, res: Response)
 
     // Calculate totalScore explicitly
     const totalScore = attributes.reduce((acc: number, item: any) => acc + item.score, 0);
+    const currentTerm = await getCurrentTerm();
 
     const evaluation = new AttributeEvaluation({
       studentId,
       teacherId: effectiveTeacherId,
       studentEnrollmentId,
+      academicTermId: currentTerm?._id ?? null,
       attributes: attributes.map((item: any) => ({
         attributeId: item.attributeId,
         score: item.score,
@@ -386,6 +389,7 @@ export const createAttributeEvaluation = async (req: AuthRequest, res: Response)
     });
 
     await evaluation.save();
+    await enqueueStudentBadgeEvaluations([String(evaluation.studentId)]);
 
     const populated = await AttributeEvaluation.findById(evaluation._id)
       .populate('studentId', 'firstName lastName')
@@ -489,6 +493,7 @@ export const updateAttributeEvaluation = async (req: AuthRequest, res: Response)
       }
     }
 
+    const previousStudentId = String(evaluation.studentId);
     const updateData: any = {};
     if (studentId) updateData.studentId = studentId;
     // teacherId is never changed via update; it stays from when it was created
@@ -509,6 +514,12 @@ export const updateAttributeEvaluation = async (req: AuthRequest, res: Response)
       .populate('studentEnrollmentId', 'gradeId schoolYear isActive')
       .populate('attributes.attributeId', 'name description minScore maxScore')
       .lean();
+
+    const nextStudentId = String(updated?.studentId?._id ?? updated?.studentId ?? previousStudentId);
+    await enqueueStudentBadgeEvaluations(
+      Array.from(new Set([previousStudentId, nextStudentId]))
+    );
+
     sendResponse(res, 200, true, 'Attribute evaluation updated successfully', updated);
   } catch (error: any) {
     sendResponse(res, error.statusCode || 500, false, error.message || `Server error updating evaluation`, null, error);
@@ -589,6 +600,7 @@ export const patchAttributeEvaluation = async (req: AuthRequest, res: Response):
     }
 
     await evaluation.save();
+    await enqueueStudentBadgeEvaluations([String(evaluation.studentId)]);
 
     const updated = await AttributeEvaluation.findById(id)
       .populate('studentId', 'firstName lastName')
@@ -620,6 +632,7 @@ export const deleteAttributeEvaluation = async (req: AuthRequest, res: Response)
     }
 
     await AttributeEvaluation.findByIdAndDelete(id);
+    await enqueueStudentBadgeEvaluations([String(evaluation.studentId)]);
     sendResponse(res, 200, true, 'Attribute evaluation deleted successfully');
   } catch (error) {
     sendResponse(res, 500, false, `Server error deleting evaluation: ${(error as Error).message}`, null, error);

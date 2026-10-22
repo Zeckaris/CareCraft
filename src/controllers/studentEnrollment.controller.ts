@@ -12,6 +12,7 @@ import {
   getTeacherSectionIds,
 } from '../middlewares/access.middleware.js';
 import { yearsMatch, getYearVariants, normalizeYear } from '../utils/yearNormalizer.js';
+import { enqueueStudentBadgeEvaluations } from '../service/badgeEvaluationQueue.service.js';
 import { sortByStudentName } from '../utils/studentSort.util.js';
 import {
   getOpenRegistrationCalendarWindows,
@@ -352,6 +353,7 @@ export const createEnrollment = async (req: AuthRequest, res: Response): Promise
         registration.isOverride && override.record ? override.record : null,
     });
     await Student.findByIdAndUpdate(studentId, { enrollmentId: enrollment._id });
+    await enqueueStudentBadgeEvaluations([String(studentId)]);
 
     const populated = await StudentEnrollment.findById(enrollment._id)
       .populate('studentId', 'firstName middleName lastName profileImage')
@@ -453,6 +455,8 @@ export const updateEnrollment = async (req: AuthRequest, res: Response): Promise
       .populate('gradeId', 'level')
       .populate('sectionId', 'name');
 
+    await enqueueStudentBadgeEvaluations([String(enrollment.studentId)]);
+
     sendResponse(res, 200, true, 'Enrollment updated successfully.', updated);
   } catch (error) {
     sendResponse(res, 500, false, 'Server error updating enrollment.', null, error);
@@ -514,6 +518,8 @@ export const toggleEnrollmentActive = async (req: AuthRequest, res: Response): P
       .populate('studentId', 'firstName middleName lastName profileImage')
       .populate('gradeId', 'level')
       .populate('sectionId', 'name');
+
+    await enqueueStudentBadgeEvaluations([String(enrollment.studentId)]);
 
     sendResponse(res, 200, true, `Enrollment ${newStatus ? 'activated' : 'deactivated'} successfully.`, updated);
   } catch (error) {
@@ -635,6 +641,7 @@ export const bulkCreateEnrollments = async (req: AuthRequest, res: Response): Pr
     const validStudentIds = studentIds.filter((id: string) => mongoose.isValidObjectId(id));
     let successCount = 0;
     const errors: string[] = [];
+    const enrolledStudentIds: string[] = [];
 
     for (const studentId of validStudentIds) {
       try {
@@ -682,11 +689,14 @@ export const bulkCreateEnrollments = async (req: AuthRequest, res: Response): Pr
             registration.isOverride && override.record ? override.record : null,
         });
         await Student.findByIdAndUpdate(studentId, { enrollmentId: enrollment._id });
+        enrolledStudentIds.push(String(studentId));
         successCount++;
       } catch (err: any) {
         errors.push(`Student ${studentId}: ${err.message}`);
       }
     }
+
+    await enqueueStudentBadgeEvaluations(enrolledStudentIds);
 
     sendResponse(res, 201, true, `Bulk enrollment completed: ${successCount} successful`, {
       successCount,
@@ -757,6 +767,7 @@ export const moveEnrollmentSection = async (req: Request, res: Response): Promis
 
     enrollment.sectionId = targetSection._id;
     await enrollment.save();
+    await enqueueStudentBadgeEvaluations([String(enrollment.studentId)]);
 
     const populated = await StudentEnrollment.findById(id)
       .populate('studentId', 'firstName middleName lastName profileImage')
@@ -795,6 +806,7 @@ export const bulkMoveEnrollmentSections = async (req: Request, res: Response): P
 
     let successCount = 0;
     const errors: string[] = [];
+    const movedStudentIds: string[] = [];
 
     for (const eid of enrollmentIds) {
       if (!mongoose.isValidObjectId(eid)) {
@@ -816,8 +828,11 @@ export const bulkMoveEnrollmentSections = async (req: Request, res: Response): P
       }
       enrollment.sectionId = targetSection._id;
       await enrollment.save();
+      movedStudentIds.push(String(enrollment.studentId));
       successCount++;
     }
+
+    await enqueueStudentBadgeEvaluations(movedStudentIds);
 
     sendResponse(res, 200, true, `Bulk move completed: ${successCount} moved`, {
       successCount,
