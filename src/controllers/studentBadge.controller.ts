@@ -18,7 +18,7 @@ import {
   NO_CURRENT_TERM_MESSAGE,
   resolveCurrentBadgeWindow,
 } from '../service/badgeWindow.service.js'
-import { awardStudentBadge } from '../service/studentBadgeAward.service.js'
+import { awardStudentBadge, GIFT_CLAIM_WINDOW_DAYS } from '../service/studentBadgeAward.service.js'
 import { getYearVariants } from '../utils/yearNormalizer.js'
 import {
   buildBadgeEvaluationContext,
@@ -27,7 +27,8 @@ import {
 import { resolveCurrentBadgeEnrollment } from '../service/badgeWindow.service.js'
 
 const BADGE_POPULATE_FIELDS =
-  'name description howToEarn icon level eligibleGrades autoAward'
+  'name description howToEarn icon level eligibleGrades autoAward giftId giftQuantity'
+const GIFT_POPULATE_FIELDS = 'name description image isActive'
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -114,10 +115,61 @@ async function assertCanDeleteAward(
 
 function populateAwardQuery(query: any): any {
   return query
-    .populate('badgeId', BADGE_POPULATE_FIELDS)
+    .populate({
+      path: 'badgeId',
+      select: BADGE_POPULATE_FIELDS,
+      populate: { path: 'giftId', select: GIFT_POPULATE_FIELDS },
+    })
     .populate('studentId', 'firstName lastName')
     .populate('awardedBy', 'firstName lastName email role')
+    .populate('giftId', GIFT_POPULATE_FIELDS)
+    .populate('giftGivenBy', 'firstName lastName email role')
     .populate('academicTermId', 'name startDate endDate')
+}
+
+function shapeAward(award: any): any {
+  if (!award) return award
+  const giftStatus =
+    award.giftStatus === 'pending' || award.giftStatus === 'given'
+      ? award.giftStatus
+      : 'none'
+  const createdAt = award.createdAt ? new Date(award.createdAt) : null
+  const giftClaimBy =
+    giftStatus !== 'none' && createdAt
+      ? new Date(
+          createdAt.getTime() +
+            GIFT_CLAIM_WINDOW_DAYS * 24 * 60 * 60 * 1000
+        )
+      : null
+
+  return { ...award, giftStatus, giftClaimBy }
+}
+
+function shapeAwards(awards: any[]): any[] {
+  return awards.map(shapeAward)
+}
+
+async function assertCanUpdateGift(
+  req: AuthRequest,
+  studentId: mongoose.Types.ObjectId
+): Promise<void> {
+  const user = req.user!
+  if (['admin', 'coordinator'].includes(user.role)) return
+
+  if (user.role !== 'teacher') {
+    const error: any = new Error('Access denied')
+    error.statusCode = 403
+    throw error
+  }
+
+  const homeroom = await isHomeroomForStudent(user.id, studentId)
+  if (!homeroom) {
+    const error: any = new Error(
+      'Forbidden: Only the homeroom teacher can update gift status for this student'
+    )
+    error.statusCode = 403
+    throw error
+  }
 }
 
 // ─── GET ALL ─────────────────────────────────────────────────────────────────
@@ -135,6 +187,7 @@ export const getAllStudentBadges = async (
     academicTermId,
     source,
     awardedBy,
+    giftStatus,
   } = req.query
   const skip = (Number(page) - 1) * Number(limit)
 
@@ -189,6 +242,18 @@ export const getAllStudentBadges = async (
     }
     filter.awardedBy = awardedBy
   }
+  if (giftStatus) {
+    if (!['pending', 'given'].includes(String(giftStatus))) {
+      sendResponse(
+        res,
+        400,
+        false,
+        'Invalid giftStatus: must be pending or given'
+      )
+      return
+    }
+    filter.giftStatus = String(giftStatus)
+  }
 
   // Never let a query filter override the caller's role scope.
   if (Object.keys(constraint).length > 0) {
@@ -203,7 +268,7 @@ export const getAllStudentBadges = async (
       .lean()
     const total = await StudentBadge.countDocuments(filter)
 
-    sendResponse(res, 200, true, 'Student badges fetched successfully', badges, null, {
+    sendResponse(res, 200, true, 'Student badges fetched successfully', shapeAwards(badges), null, {
       total,
       page: Number(page),
       limit: Number(limit),
@@ -248,7 +313,7 @@ export const getStudentBadgeById = async (
       await assertTeacherCanReadStudent(user.id, studentId)
     }
 
-    sendResponse(res, 200, true, 'Student badge fetched successfully', badge)
+    sendResponse(res, 200, true, 'Student badge fetched successfully', shapeAward(badge))
   } catch (error: any) {
     sendResponse(
       res,
@@ -340,7 +405,7 @@ export const createStudentBadge = async (
       StudentBadge.findById(result.award._id)
     ).lean()
 
-    sendResponse(res, 201, true, 'Student badge created successfully', populated)
+    sendResponse(res, 201, true, 'Student badge created successfully', shapeAward(populated))
   } catch (error: any) {
     if (error?.code === 11000) {
       sendResponse(
@@ -403,13 +468,110 @@ export const updateStudentBadge = async (
       )
     ).lean()
 
-    sendResponse(res, 200, true, 'Student badge updated successfully', updated)
+    sendResponse(res, 200, true, 'Student badge updated successfully', shapeAward(updated))
   } catch (error: any) {
     sendResponse(
       res,
       error.statusCode || 500,
       false,
       error.message || 'Server error updating student badge',
+      null,
+      error
+    )
+  }
+}
+
+// ─── UPDATE GIFT STATUS ──────────────────────────────────────────────────────
+
+export const updateStudentBadgeGift = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  const { id } = req.params
+
+  if (!mongoose.isValidObjectId(id)) {
+    sendResponse(res, 400, false, 'Invalid student badge ID')
+    return
+  }
+
+  const body = req.body ?? {}
+  const fields = Object.keys(body)
+  if (fields.some((field) => !['given', 'note'].includes(field))) {
+    sendResponse(res, 400, false, 'Only given and note can be updated')
+    return
+  }
+
+  const { given, note } = body
+  if (typeof given !== 'boolean') {
+    sendResponse(res, 400, false, 'given must be true or false')
+    return
+  }
+  if (note !== undefined && note !== null && typeof note !== 'string') {
+    sendResponse(res, 400, false, 'note must be a string')
+    return
+  }
+  if (typeof note === 'string' && note.trim().length > 300) {
+    sendResponse(res, 400, false, 'note must be at most 300 characters')
+    return
+  }
+  if (given === false && note !== undefined) {
+    sendResponse(
+      res,
+      400,
+      false,
+      'note can only be set when marking a gift as given'
+    )
+    return
+  }
+
+  try {
+    const studentBadge = await StudentBadge.findById(id)
+    if (!studentBadge) {
+      sendResponse(res, 404, false, 'StudentBadge not found')
+      return
+    }
+
+    const currentStatus = studentBadge.giftStatus ?? 'none'
+    if (currentStatus === 'none') {
+      sendResponse(res, 400, false, 'This badge award does not include a gift')
+      return
+    }
+    if (given === true && currentStatus === 'given') {
+      sendResponse(res, 400, false, 'Gift has already been marked as given')
+      return
+    }
+    if (given === false && currentStatus === 'pending') {
+      sendResponse(res, 400, false, 'Gift is already pending')
+      return
+    }
+
+    await assertCanUpdateGift(req, studentBadge.studentId)
+
+    const updateData = given
+      ? {
+          giftStatus: 'given' as const,
+          giftGivenAt: new Date(),
+          giftGivenBy: req.user!.id,
+          giftNote: typeof note === 'string' ? note.trim() : '',
+        }
+      : {
+          giftStatus: 'pending' as const,
+          giftGivenAt: null,
+          giftGivenBy: null,
+          giftNote: '',
+        }
+
+    const updated = await populateAwardQuery(
+      StudentBadge.findByIdAndUpdate(id, updateData, { new: true })
+    ).lean()
+
+    sendResponse(res, 200, true, 'Gift status updated successfully', shapeAward(updated))
+  } catch (error: any) {
+    sendResponse(
+      res,
+      error.statusCode || 500,
+      false,
+      error.message || 'Server error updating gift status',
       null,
       error
     )
@@ -543,6 +705,7 @@ export const getStudentBadgeProgress = async (
         eligibleGrades: enrollment.gradeId,
       })
         .populate('criteria')
+        .populate('giftId', GIFT_POPULATE_FIELDS)
         .lean(),
       StudentBadge.find({
         studentId: student._id,
@@ -566,6 +729,7 @@ export const getStudentBadgeProgress = async (
         _id: { $in: extraBadgeIds },
       })
         .populate('criteria')
+        .populate('giftId', GIFT_POPULATE_FIELDS)
         .lean()
       for (const badge of extraBadges as any[]) {
         badgeById.set(String(badge._id), badge)
@@ -593,6 +757,8 @@ export const getStudentBadgeProgress = async (
           icon: badge.icon ?? '',
           level: badge.level,
           autoAward: badge.autoAward,
+          giftId: badge.giftId ?? null,
+          giftQuantity: badge.giftQuantity ?? null,
         },
         earned: !!award,
         awardId: award?._id ?? null,
