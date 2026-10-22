@@ -4,6 +4,7 @@ import { roleMiddleware } from '../middlewares/role.middleware.js';
 import {
   getAllStudentBadges,
   getStudentBadgeById,
+  getStudentBadgeProgress,
   createStudentBadge,
   updateStudentBadge,
   deleteStudentBadge
@@ -13,6 +14,7 @@ const router = express.Router();
 
 // Parent can read their child's badges; access scoping is done inside the controller
 router.get('/', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher', 'parent'), getAllStudentBadges);
+router.get('/progress', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher', 'parent'), getStudentBadgeProgress);
 router.get('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher', 'parent'), getStudentBadgeById);
 // Homeroom teachers award directly; admins/coordinators have oversight.
 // Awards are term-scoped and only the note may be edited afterwards.
@@ -20,4 +22,4 @@ router.post('/', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher
 router.put('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), updateStudentBadge);
 router.delete('/:id', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), deleteStudentBadge);
 
-export default router;
+export default router;

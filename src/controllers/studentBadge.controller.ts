@@ -3,6 +3,7 @@ import mongoose from 'mongoose'
 import { StudentBadge } from '../models/studentBadge.model.js'
 import { BadgeDefinition } from '../models/badgeDefinition.model.js'
 import { Student } from '../models/student.model.js'
+import { BadgeAwardSuppression } from '../models/badgeAwardSuppression.model.js'
 import { StudentEnrollment } from '../models/studentEnrollment.model.js'
 import { sendResponse } from '../utils/sendResponse.util.js'
 import { AuthRequest } from '../middlewares/auth.middleware.js'
@@ -11,11 +12,22 @@ import {
   assertTeacherCanReadStudent,
   assertParentOwnsStudent,
   getTeacherSectionIds,
+  isHomeroomForStudent,
 } from '../middlewares/access.middleware.js'
-import { getCurrentAcademicSnapshot } from '../service/currentAcademic.service.js'
-import { getYearVariants, normalizeYear } from '../utils/yearNormalizer.js'
+import {
+  NO_CURRENT_TERM_MESSAGE,
+  resolveCurrentBadgeWindow,
+} from '../service/badgeWindow.service.js'
+import { awardStudentBadge } from '../service/studentBadgeAward.service.js'
+import { getYearVariants } from '../utils/yearNormalizer.js'
+import {
+  buildBadgeEvaluationContext,
+  evaluateBadgeCriteria,
+} from '../badges/criteriaEvaluator.js'
+import { resolveCurrentBadgeEnrollment } from '../service/badgeWindow.service.js'
 
-const BADGE_POPULATE_FIELDS = 'name description icon level eligibleGrades autoAward'
+const BADGE_POPULATE_FIELDS =
+  'name description howToEarn icon level eligibleGrades autoAward'
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -43,33 +55,6 @@ async function buildStudentConstraint(req: AuthRequest): Promise<any> {
   }
 
   return { studentId: new mongoose.Types.ObjectId() }
-}
-
-async function loadCurrentTermContext(): Promise<{
-  schoolYear: string
-  academicTermId: mongoose.Types.ObjectId
-}> {
-  const snapshot = await getCurrentAcademicSnapshot()
-  const schoolYear = normalizeYear(
-    String(snapshot.currentCalendar?.academicYear ?? '')
-  )
-
-  if (
-    !snapshot.currentCalendar ||
-    !snapshot.currentTerm ||
-    !/^\d{4}-\d{4}$/.test(schoolYear)
-  ) {
-    const error: any = new Error(
-      'No current academic term is available based on calendar dates'
-    )
-    error.statusCode = 404
-    throw error
-  }
-
-  return {
-    schoolYear,
-    academicTermId: new mongoose.Types.ObjectId(String(snapshot.currentTerm._id)),
-  }
 }
 
 async function assertCanManageAward(
@@ -304,10 +289,6 @@ export const createStudentBadge = async (
   try {
     const user = req.user!
 
-    if (user.role === 'teacher') {
-      await assertTeacherCanWriteStudent(user.id, studentId)
-    }
-
     const badgeDefinition = await BadgeDefinition.findById(badgeId)
     if (!badgeDefinition) {
       sendResponse(res, 404, false, 'BadgeDefinition not found')
@@ -320,52 +301,28 @@ export const createStudentBadge = async (
       return
     }
 
-    const { schoolYear, academicTermId } = await loadCurrentTermContext()
+    const { term } = await resolveCurrentBadgeWindow()
+    if (!term) {
+      sendResponse(res, 404, false, NO_CURRENT_TERM_MESSAGE)
+      return
+    }
 
-    const enrollment = await StudentEnrollment.findOne({
-      studentId,
-      schoolYear: { $in: getYearVariants(schoolYear) },
+    const result = await awardStudentBadge({
+      badge: badgeDefinition,
+      student,
+      term,
+      actor: {
+        type: 'user',
+        user: { id: user.id, role: user.role },
+      },
+      note: typeof note === 'string' ? note : undefined,
     })
-      .sort({ isActive: -1, createdAt: -1 })
-      .select('gradeId isActive')
-      .lean()
 
-    if (!enrollment) {
-      sendResponse(
-        res,
-        400,
-        false,
-        `Student is not enrolled in the current school year (${schoolYear})`
-      )
+    if (result.status === 'failed') {
+      sendResponse(res, result.statusCode, false, result.message)
       return
     }
-
-    const eligibleGrades = (badgeDefinition.eligibleGrades ?? []).map(String)
-    if (eligibleGrades.length === 0) {
-      sendResponse(
-        res,
-        400,
-        false,
-        'Badge is not enabled for any grade yet; an admin must assign eligible grades first'
-      )
-      return
-    }
-    if (!eligibleGrades.includes(String(enrollment.gradeId))) {
-      sendResponse(
-        res,
-        400,
-        false,
-        "Student's grade is not eligible for this badge"
-      )
-      return
-    }
-
-    const existingBadge = await StudentBadge.findOne({
-      badgeId,
-      studentId,
-      academicTermId,
-    })
-    if (existingBadge) {
+    if (result.status === 'alreadyAwarded') {
       sendResponse(
         res,
         400,
@@ -374,19 +331,13 @@ export const createStudentBadge = async (
       )
       return
     }
-
-    const studentBadge = await StudentBadge.create({
-      badgeId,
-      studentId,
-      schoolYear,
-      academicTermId,
-      source: user.role === 'teacher' ? 'teacher' : 'admin',
-      awardedBy: user.id,
-      note: typeof note === 'string' ? note.trim() : '',
-    })
+    if (result.status === 'suppressed') {
+      sendResponse(res, 403, false, 'Access denied')
+      return
+    }
 
     const populated = await populateAwardQuery(
-      StudentBadge.findById(studentBadge._id)
+      StudentBadge.findById(result.award._id)
     ).lean()
 
     sendResponse(res, 201, true, 'Student badge created successfully', populated)
@@ -488,6 +439,23 @@ export const deleteStudentBadge = async (
     await assertCanDeleteAward(req, studentBadge)
 
     await StudentBadge.findByIdAndDelete(id)
+
+    if (
+      studentBadge.source === 'system' &&
+      studentBadge.academicTermId &&
+      ['admin', 'coordinator'].includes(req.user!.role)
+    ) {
+      await BadgeAwardSuppression.updateOne(
+        {
+          studentId: studentBadge.studentId,
+          badgeId: studentBadge.badgeId,
+          academicTermId: studentBadge.academicTermId,
+        },
+        { $setOnInsert: { createdBy: req.user!.id } },
+        { upsert: true }
+      )
+    }
+
     sendResponse(res, 200, true, 'Student badge deleted successfully')
   } catch (error: any) {
     sendResponse(
@@ -495,6 +463,163 @@ export const deleteStudentBadge = async (
       error.statusCode || 500,
       false,
       error.message || 'Server error deleting student badge',
+      null,
+      error
+    )
+  }
+}
+
+
+// ─── PROGRESS ────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/studentBadge/progress?studentId=<id>
+ *
+ * Computes current-term badge progress on request with the same evaluator used
+ * by the background worker.
+ */
+export const getStudentBadgeProgress = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  const studentId = String(req.query.studentId ?? '')
+
+  if (!mongoose.isValidObjectId(studentId)) {
+    sendResponse(res, 400, false, 'Invalid studentId')
+    return
+  }
+
+  try {
+    const student = await Student.findById(studentId)
+      .select('firstName middleName lastName parentId')
+      .lean()
+    if (!student) {
+      sendResponse(res, 404, false, 'Student not found')
+      return
+    }
+
+    const user = req.user!
+    if (user.role === 'parent') {
+      await assertParentOwnsStudent(user.id, student._id)
+    } else if (user.role === 'teacher') {
+      const homeroom = await isHomeroomForStudent(user.id, student._id)
+      if (!homeroom) {
+        sendResponse(
+          res,
+          403,
+          false,
+          'Forbidden: Only the homeroom teacher can view badge progress for this student'
+        )
+        return
+      }
+    } else if (!['admin', 'coordinator'].includes(user.role)) {
+      sendResponse(res, 403, false, 'Access denied')
+      return
+    }
+
+    const { term, schoolYear, snapshot } = await resolveCurrentBadgeWindow()
+    if (!term || !schoolYear) {
+      sendResponse(res, 400, false, NO_CURRENT_TERM_MESSAGE)
+      return
+    }
+
+    const enrollment = await resolveCurrentBadgeEnrollment(
+      student._id,
+      schoolYear
+    )
+    if (!enrollment) {
+      sendResponse(
+        res,
+        400,
+        false,
+        `Student is not enrolled in the current school year (${schoolYear})`
+      )
+      return
+    }
+
+    const [eligibleBadges, awards] = await Promise.all([
+      BadgeDefinition.find({
+        autoAward: true,
+        eligibleGrades: enrollment.gradeId,
+      })
+        .populate('criteria')
+        .lean(),
+      StudentBadge.find({
+        studentId: student._id,
+        academicTermId: term._id,
+      }).lean(),
+    ])
+
+    const awardByBadgeId = new Map(
+      awards.map((award: any) => [String(award.badgeId), award])
+    )
+    const badgeById = new Map(
+      (eligibleBadges as any[]).map((badge: any) => [String(badge._id), badge])
+    )
+
+    const extraBadgeIds = awards
+      .map((award: any) => String(award.badgeId))
+      .filter((badgeId: string) => !badgeById.has(badgeId))
+
+    if (extraBadgeIds.length > 0) {
+      const extraBadges = await BadgeDefinition.find({
+        _id: { $in: extraBadgeIds },
+      })
+        .populate('criteria')
+        .lean()
+      for (const badge of extraBadges as any[]) {
+        badgeById.set(String(badge._id), badge)
+      }
+    }
+
+    const badges = Array.from(badgeById.values())
+    const context = await buildBadgeEvaluationContext({
+      studentId: student._id,
+      term,
+      schoolYear,
+      timeZone: snapshot.timeZone,
+      enrollment,
+    })
+
+    const results = badges.map((badge: any) => {
+      const evaluation = evaluateBadgeCriteria(badge, context)
+      const award = awardByBadgeId.get(String(badge._id))
+      return {
+        badge: {
+          _id: badge._id,
+          name: badge.name,
+          description: badge.description,
+          howToEarn: badge.howToEarn ?? '',
+          icon: badge.icon ?? '',
+          level: badge.level,
+          autoAward: badge.autoAward,
+        },
+        earned: !!award,
+        awardId: award?._id ?? null,
+        awardedAt: award?.createdAt ?? null,
+        source: award?.source ?? null,
+        criteria: evaluation.criteria,
+        allMet: evaluation.allMet,
+      }
+    })
+
+    sendResponse(res, 200, true, 'Badge progress fetched successfully', {
+      studentId: student._id,
+      schoolYear,
+      academicTerm: {
+        _id: term._id,
+        name: term.name,
+        startDate: term.startDate,
+        endDate: term.endDate,
+      },
+      badges: results,
+    })
+  } catch (error: any) {
+    sendResponse(
+      res,
+      error?.statusCode || 500,
+      false,
+      error?.message || 'Server error fetching badge progress',
       null,
       error
     )

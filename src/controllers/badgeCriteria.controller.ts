@@ -3,16 +3,21 @@ import mongoose from 'mongoose'
 import { BadgeCriteria } from '../models/badgeCriteria.model.js'
 import { BadgeDefinition } from '../models/badgeDefinition.model.js'
 import { AttributeCategory } from '../models/attributeCategory.model.js'
+import { Subject } from '../models/subject.model.js'
 import { sendResponse } from '../utils/sendResponse.util.js'
 import {
   AUTOMATIC_CRITERIA_TYPES,
   BADGE_CRITERIA_TYPE_LIST,
+  BADGE_STREAK_MODE_LIST,
   isAutomaticCriteriaType,
   isBadgeCriteriaScope,
   isBadgeCriteriaType,
+  isBadgeStreakMode,
   type BadgeCriteriaScope,
   type BadgeCriteriaType,
+  type BadgeStreakMode,
 } from '../badges/criteriaRegistry.js'
+import { enqueueBadgeEvaluationForBadge } from '../service/badgeEvaluationQueue.service.js'
 
 interface NormalizedCriteria {
   type: BadgeCriteriaType
@@ -22,6 +27,10 @@ interface NormalizedCriteria {
   minRecordedSchoolDays: number | null
   minLockedWeightPercentage: number | null
   minEvaluationCount: number | null
+  subjectId: mongoose.Types.ObjectId | null
+  mode: BadgeStreakMode | null
+  minDays: number | null
+  minPoints: number | null
   scope: BadgeCriteriaScope | null
   description: string
 }
@@ -74,6 +83,10 @@ async function validateCriteriaValues(raw: {
   minRecordedSchoolDays: unknown
   minLockedWeightPercentage: unknown
   minEvaluationCount: unknown
+  subjectId: unknown
+  mode: unknown
+  minDays: unknown
+  minPoints: unknown
   scope: unknown
   description: unknown
 }): Promise<ValidationResult> {
@@ -93,6 +106,11 @@ async function validateCriteriaValues(raw: {
   )
   if (category.error) {
     return { error: { status: 400, message: category.error } }
+  }
+
+  const subject = parseNullableObjectId(raw.subjectId, 'subjectId')
+  if (subject.error) {
+    return { error: { status: 400, message: subject.error } }
   }
 
   const minScore = parseNullableNumber(raw.minScore, 'minScore')
@@ -120,6 +138,15 @@ async function validateCriteriaValues(raw: {
   if (minLockedWeightPercentage.error) {
     return { error: { status: 400, message: minLockedWeightPercentage.error } }
   }
+  if (minLockedWeightPercentage.number !== null) {
+    return {
+      error: {
+        status: 400,
+        message:
+          'minLockedWeightPercentage is no longer supported. Academic criteria now wait until every assessment stage is locked.',
+      },
+    }
+  }
 
   const minEvaluationCount = parseNullableInteger(
     raw.minEvaluationCount,
@@ -127,6 +154,29 @@ async function validateCriteriaValues(raw: {
   )
   if (minEvaluationCount.error) {
     return { error: { status: 400, message: minEvaluationCount.error } }
+  }
+
+  const minDays = parseNullableInteger(raw.minDays, 'minDays')
+  if (minDays.error) {
+    return { error: { status: 400, message: minDays.error } }
+  }
+
+  const minPoints = parseNullableNumber(raw.minPoints, 'minPoints')
+  if (minPoints.error) {
+    return { error: { status: 400, message: minPoints.error } }
+  }
+
+  let mode: BadgeStreakMode | null = null
+  if (!isBlank(raw.mode)) {
+    if (!isBadgeStreakMode(raw.mode)) {
+      return {
+        error: {
+          status: 400,
+          message: `Invalid mode: must be one of ${BADGE_STREAK_MODE_LIST}`,
+        },
+      }
+    }
+    mode = raw.mode
   }
 
   let scope: BadgeCriteriaScope | null = null
@@ -142,6 +192,21 @@ async function validateCriteriaValues(raw: {
   const description =
     typeof raw.description === 'string' ? raw.description.trim() : ''
 
+  const rejectExtras = (
+    fields: Array<[string, boolean]>
+  ): ValidationResult | null => {
+    const extras = fields
+      .filter(([, present]) => present)
+      .map(([field]) => field)
+    if (extras.length === 0) return null
+    return {
+      error: {
+        status: 400,
+        message: `${type} does not accept ${extras.join(', ')}`,
+      },
+    }
+  }
+
   if (type === 'attributeAverage') {
     if (minScore.number === null) {
       return {
@@ -156,14 +221,6 @@ async function validateCriteriaValues(raw: {
         error: {
           status: 400,
           message: 'attributeAverage requires scope (term or year)',
-        },
-      }
-    }
-    if (minPercentage.number !== null) {
-      return {
-        error: {
-          status: 400,
-          message: 'minPercentage is only valid for attendanceRate and academicAverage',
         },
       }
     }
@@ -186,18 +243,16 @@ async function validateCriteriaValues(raw: {
         },
       }
     }
-    if (
-      minRecordedSchoolDays.integer !== null ||
-      minLockedWeightPercentage.number !== null
-    ) {
-      return {
-        error: {
-          status: 400,
-          message:
-            'attributeAverage does not accept minRecordedSchoolDays or minLockedWeightPercentage',
-        },
-      }
-    }
+
+    const extras = rejectExtras([
+      ['minPercentage', minPercentage.number !== null],
+      ['minRecordedSchoolDays', minRecordedSchoolDays.integer !== null],
+      ['subjectId', subject.id !== null],
+      ['mode', mode !== null],
+      ['minDays', minDays.integer !== null],
+      ['minPoints', minPoints.number !== null],
+    ])
+    if (extras) return extras
 
     if (category.id) {
       const attributeCategory = await AttributeCategory.findById(category.id)
@@ -253,18 +308,22 @@ async function validateCriteriaValues(raw: {
         minRecordedSchoolDays: null,
         minLockedWeightPercentage: null,
         minEvaluationCount: minEvaluationCount.integer,
+        subjectId: null,
+        mode: null,
+        minDays: null,
+        minPoints: null,
         scope,
         description,
       },
     }
   }
 
-  if (type === 'attendanceRate' || type === 'academicAverage') {
+  if (type === 'attendanceRate') {
     if (minPercentage.number === null) {
       return {
         error: {
           status: 400,
-          message: `${type} requires minPercentage`,
+          message: 'attendanceRate requires minPercentage',
         },
       }
     }
@@ -280,83 +339,101 @@ async function validateCriteriaValues(raw: {
       return {
         error: {
           status: 400,
-          message: `${type} requires scope (term or year)`,
+          message: 'attendanceRate requires scope (term or year)',
         },
       }
     }
-    if (category.id !== null || minScore.number !== null) {
+    if (minRecordedSchoolDays.integer === null) {
       return {
         error: {
           status: 400,
-          message: `${type} does not accept attributeCategoryId or minScore`,
+          message: 'attendanceRate requires minRecordedSchoolDays',
+        },
+      }
+    }
+    if (
+      minRecordedSchoolDays.integer < 1 ||
+      minRecordedSchoolDays.integer > 366
+    ) {
+      return {
+        error: {
+          status: 400,
+          message: 'minRecordedSchoolDays must be between 1 and 366',
         },
       }
     }
 
-    if (type === 'attendanceRate') {
-      if (minRecordedSchoolDays.integer === null) {
-        return {
-          error: {
-            status: 400,
-            message: 'attendanceRate requires minRecordedSchoolDays',
-          },
-        }
+    const extras = rejectExtras([
+      ['attributeCategoryId', category.id !== null],
+      ['minScore', minScore.number !== null],
+      ['minEvaluationCount', minEvaluationCount.integer !== null],
+      ['subjectId', subject.id !== null],
+      ['mode', mode !== null],
+      ['minDays', minDays.integer !== null],
+      ['minPoints', minPoints.number !== null],
+    ])
+    if (extras) return extras
+
+    return {
+      value: {
+        type,
+        attributeCategoryId: null,
+        minScore: null,
+        minPercentage: minPercentage.number,
+        minRecordedSchoolDays: minRecordedSchoolDays.integer,
+        minLockedWeightPercentage: null,
+        minEvaluationCount: null,
+        subjectId: null,
+        mode: null,
+        minDays: null,
+        minPoints: null,
+        scope,
+        description,
+      },
+    }
+  }
+
+  if (type === 'academicAverage') {
+    if (minPercentage.number === null) {
+      return {
+        error: {
+          status: 400,
+          message: 'academicAverage requires minPercentage',
+        },
       }
-      if (
-        minRecordedSchoolDays.integer < 1 ||
-        minRecordedSchoolDays.integer > 366
-      ) {
-        return {
-          error: {
-            status: 400,
-            message: 'minRecordedSchoolDays must be between 1 and 366',
-          },
-        }
+    }
+    if (minPercentage.number < 0 || minPercentage.number > 100) {
+      return {
+        error: {
+          status: 400,
+          message: 'minPercentage must be between 0 and 100',
+        },
       }
-      if (
-        minLockedWeightPercentage.number !== null ||
-        minEvaluationCount.integer !== null
-      ) {
-        return {
-          error: {
-            status: 400,
-            message:
-              'attendanceRate does not accept minLockedWeightPercentage or minEvaluationCount',
-          },
-        }
+    }
+    if (scope === null) {
+      return {
+        error: {
+          status: 400,
+          message: 'academicAverage requires scope (term or year)',
+        },
       }
-    } else {
-      if (minLockedWeightPercentage.number === null) {
-        return {
-          error: {
-            status: 400,
-            message: 'academicAverage requires minLockedWeightPercentage',
-          },
-        }
-      }
-      if (
-        minLockedWeightPercentage.number <= 0 ||
-        minLockedWeightPercentage.number > 100
-      ) {
-        return {
-          error: {
-            status: 400,
-            message:
-              'minLockedWeightPercentage must be greater than 0 and at most 100',
-          },
-        }
-      }
-      if (
-        minRecordedSchoolDays.integer !== null ||
-        minEvaluationCount.integer !== null
-      ) {
-        return {
-          error: {
-            status: 400,
-            message:
-              'academicAverage does not accept minRecordedSchoolDays or minEvaluationCount',
-          },
-        }
+    }
+
+    const extras = rejectExtras([
+      ['attributeCategoryId', category.id !== null],
+      ['minScore', minScore.number !== null],
+      ['minRecordedSchoolDays', minRecordedSchoolDays.integer !== null],
+      ['minEvaluationCount', minEvaluationCount.integer !== null],
+      ['mode', mode !== null],
+      ['minDays', minDays.integer !== null],
+      ['minPoints', minPoints.number !== null],
+    ])
+    if (extras) return extras
+
+    if (subject.id) {
+      const subjectDoc = await Subject.findById(subject.id)
+      if (!subjectDoc) {
+        return { error: { status: 404, message: 'Subject not found' } }
       }
     }
 
@@ -366,52 +443,170 @@ async function validateCriteriaValues(raw: {
         attributeCategoryId: null,
         minScore: null,
         minPercentage: minPercentage.number,
-        minRecordedSchoolDays:
-          type === 'attendanceRate' ? minRecordedSchoolDays.integer : null,
-        minLockedWeightPercentage:
-          type === 'academicAverage'
-            ? minLockedWeightPercentage.number
-            : null,
+        minRecordedSchoolDays: null,
+        minLockedWeightPercentage: null,
         minEvaluationCount: null,
+        subjectId: subject.id,
+        mode: null,
+        minDays: null,
+        minPoints: null,
         scope,
         description,
       },
     }
   }
 
-  // custom
-  if (!description) {
-    return {
-      error: { status: 400, message: 'custom type requires a description' },
+  if (type === 'attendanceStreak') {
+    if (mode === null) {
+      return {
+        error: {
+          status: 400,
+          message: `attendanceStreak requires mode (${BADGE_STREAK_MODE_LIST})`,
+        },
+      }
     }
-  }
-  if (
-    category.id !== null ||
-    minScore.number !== null ||
-    minPercentage.number !== null ||
-    minRecordedSchoolDays.integer !== null ||
-    minLockedWeightPercentage.number !== null ||
-    minEvaluationCount.integer !== null ||
-    scope !== null
-  ) {
+    if (minDays.integer === null) {
+      return {
+        error: {
+          status: 400,
+          message: 'attendanceStreak requires minDays',
+        },
+      }
+    }
+    if (minDays.integer < 1 || minDays.integer > 366) {
+      return {
+        error: {
+          status: 400,
+          message: 'minDays must be between 1 and 366',
+        },
+      }
+    }
+
+    const extras = rejectExtras([
+      ['attributeCategoryId', category.id !== null],
+      ['minScore', minScore.number !== null],
+      ['minPercentage', minPercentage.number !== null],
+      ['minRecordedSchoolDays', minRecordedSchoolDays.integer !== null],
+      ['minEvaluationCount', minEvaluationCount.integer !== null],
+      ['subjectId', subject.id !== null],
+      ['minPoints', minPoints.number !== null],
+      ['scope', scope !== null],
+    ])
+    if (extras) return extras
+
     return {
-      error: {
-        status: 400,
-        message:
-          'custom type does not accept attributeCategoryId, minScore, minPercentage, minRecordedSchoolDays, minLockedWeightPercentage, minEvaluationCount, or scope',
+      value: {
+        type,
+        attributeCategoryId: null,
+        minScore: null,
+        minPercentage: null,
+        minRecordedSchoolDays: null,
+        minLockedWeightPercentage: null,
+        minEvaluationCount: null,
+        subjectId: null,
+        mode,
+        minDays: minDays.integer,
+        minPoints: null,
+        scope: null,
+        description,
       },
     }
   }
+
+  if (type === 'academicImprovement') {
+    if (minPoints.number === null) {
+      return {
+        error: {
+          status: 400,
+          message: 'academicImprovement requires minPoints',
+        },
+      }
+    }
+    if (minPoints.number <= 0 || minPoints.number > 100) {
+      return {
+        error: {
+          status: 400,
+          message: 'minPoints must be greater than 0 and at most 100',
+        },
+      }
+    }
+
+    const extras = rejectExtras([
+      ['attributeCategoryId', category.id !== null],
+      ['minScore', minScore.number !== null],
+      ['minPercentage', minPercentage.number !== null],
+      ['minRecordedSchoolDays', minRecordedSchoolDays.integer !== null],
+      ['minEvaluationCount', minEvaluationCount.integer !== null],
+      ['subjectId', subject.id !== null],
+      ['mode', mode !== null],
+      ['minDays', minDays.integer !== null],
+      ['scope', scope !== null],
+    ])
+    if (extras) return extras
+
+    return {
+      value: {
+        type,
+        attributeCategoryId: null,
+        minScore: null,
+        minPercentage: null,
+        minRecordedSchoolDays: null,
+        minLockedWeightPercentage: null,
+        minEvaluationCount: null,
+        subjectId: null,
+        mode: null,
+        minDays: null,
+        minPoints: minPoints.number,
+        scope: null,
+        description,
+      },
+    }
+  }
+
+  // academicConsistency
+  if (minPercentage.number === null) {
+    return {
+      error: {
+        status: 400,
+        message: 'academicConsistency requires minPercentage',
+      },
+    }
+  }
+  if (minPercentage.number < 0 || minPercentage.number > 100) {
+    return {
+      error: {
+        status: 400,
+        message: 'minPercentage must be between 0 and 100',
+      },
+    }
+  }
+
+  const extras = rejectExtras([
+    ['attributeCategoryId', category.id !== null],
+    ['minScore', minScore.number !== null],
+    ['minRecordedSchoolDays', minRecordedSchoolDays.integer !== null],
+    ['minEvaluationCount', minEvaluationCount.integer !== null],
+    ['subjectId', subject.id !== null],
+    ['mode', mode !== null],
+    ['minDays', minDays.integer !== null],
+    ['minPoints', minPoints.number !== null],
+    ['scope', scope !== null],
+  ])
+  if (extras) return extras
 
   return {
     value: {
       type,
       attributeCategoryId: null,
       minScore: null,
-      minPercentage: null,
+      minPercentage: minPercentage.number,
       minRecordedSchoolDays: null,
       minLockedWeightPercentage: null,
       minEvaluationCount: null,
+      subjectId: null,
+      mode: null,
+      minDays: null,
+      minPoints: null,
       scope: null,
       description,
     },
@@ -551,6 +746,10 @@ export const createBadgeCriteria = async (
     minRecordedSchoolDays,
     minLockedWeightPercentage,
     minEvaluationCount,
+    subjectId,
+    mode,
+    minDays,
+    minPoints,
     scope,
     description,
   } = req.body
@@ -572,6 +771,10 @@ export const createBadgeCriteria = async (
     minRecordedSchoolDays,
     minLockedWeightPercentage,
     minEvaluationCount,
+    subjectId,
+    mode,
+    minDays,
+    minPoints,
     scope,
     description,
   })
@@ -591,6 +794,8 @@ export const createBadgeCriteria = async (
       badgeDefinitionId,
       ...result.value,
     })
+
+    await enqueueBadgeEvaluationForBadge(String(badgeDefinitionId))
 
     sendResponse(res, 201, true, 'Badge criteria created successfully', criteria)
   } catch (error) {
@@ -621,6 +826,10 @@ export const updateBadgeCriteria = async (
     minRecordedSchoolDays,
     minLockedWeightPercentage,
     minEvaluationCount,
+    subjectId,
+    mode,
+    minDays,
+    minPoints,
     scope,
     description,
   } = req.body
@@ -645,6 +854,10 @@ export const updateBadgeCriteria = async (
     minRecordedSchoolDays === undefined &&
     minLockedWeightPercentage === undefined &&
     minEvaluationCount === undefined &&
+    subjectId === undefined &&
+    mode === undefined &&
+    minDays === undefined &&
+    minPoints === undefined &&
     scope === undefined &&
     description === undefined
   ) {
@@ -652,7 +865,7 @@ export const updateBadgeCriteria = async (
       res,
       400,
       false,
-      'At least one field (badgeDefinitionId, type, attributeCategoryId, minScore, minPercentage, minRecordedSchoolDays, minLockedWeightPercentage, minEvaluationCount, scope, description) required'
+      'At least one field (badgeDefinitionId, type, attributeCategoryId, minScore, minPercentage, minRecordedSchoolDays, minLockedWeightPercentage, minEvaluationCount, subjectId, mode, minDays, minPoints, scope, description) required'
     )
     return
   }
@@ -677,14 +890,17 @@ export const updateBadgeCriteria = async (
         minRecordedSchoolDays !== undefined
           ? minRecordedSchoolDays
           : criteria.minRecordedSchoolDays,
-      minLockedWeightPercentage:
-        minLockedWeightPercentage !== undefined
-          ? minLockedWeightPercentage
-          : criteria.minLockedWeightPercentage,
+      // The legacy locked-weight field is intentionally ignored on update so
+      // old criteria can be edited before the revision migration runs.
+      minLockedWeightPercentage: null,
       minEvaluationCount:
         minEvaluationCount !== undefined
           ? minEvaluationCount
           : criteria.minEvaluationCount,
+      subjectId: subjectId !== undefined ? subjectId : criteria.subjectId,
+      mode: mode !== undefined ? mode : criteria.mode,
+      minDays: minDays !== undefined ? minDays : criteria.minDays,
+      minPoints: minPoints !== undefined ? minPoints : criteria.minPoints,
       scope: scope !== undefined ? scope : criteria.scope,
       description: description !== undefined ? description : criteria.description,
     })
@@ -754,6 +970,11 @@ export const updateBadgeCriteria = async (
       { new: true }
     ).lean()
 
+    await enqueueBadgeEvaluationForBadge(String(criteria.badgeDefinitionId))
+    if (String(criteria.badgeDefinitionId) !== nextBadgeDefinitionId) {
+      await enqueueBadgeEvaluationForBadge(nextBadgeDefinitionId)
+    }
+
     sendResponse(res, 200, true, 'Badge criteria updated successfully', updated)
   } catch (error) {
     sendResponse(
@@ -806,6 +1027,7 @@ export const deleteBadgeCriteria = async (
     }
 
     await BadgeCriteria.findByIdAndDelete(id)
+    await enqueueBadgeEvaluationForBadge(String(criteria.badgeDefinitionId))
     sendResponse(res, 200, true, 'Badge criteria deleted successfully')
   } catch (error) {
     sendResponse(

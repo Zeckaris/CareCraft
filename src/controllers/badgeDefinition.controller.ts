@@ -8,6 +8,7 @@ import { Grade } from '../models/grade.model.js'
 import { sendResponse } from '../utils/sendResponse.util.js'
 import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.util.js'
 import { AUTOMATIC_CRITERIA_TYPES } from '../badges/criteriaRegistry.js'
+import { enqueueBadgeEvaluationForBadge } from '../service/badgeEvaluationQueue.service.js'
 
 interface AuthRequest extends Request {
   user?: {
@@ -19,9 +20,27 @@ interface AuthRequest extends Request {
 }
 
 const CRITERIA_POPULATE_FIELDS =
-  'badgeDefinitionId type attributeCategoryId minScore minPercentage minRecordedSchoolDays minLockedWeightPercentage minEvaluationCount scope description createdAt'
+  'badgeDefinitionId type attributeCategoryId minScore minPercentage minRecordedSchoolDays minLockedWeightPercentage minEvaluationCount subjectId mode minDays minPoints scope description createdAt'
+
+const HOW_TO_EARN_MAX_LENGTH = 500
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
+
+function parseHowToEarn(
+  value: unknown
+): { value?: string; error?: string } {
+  if (value === undefined || value === null) return {}
+  if (typeof value !== 'string') {
+    return { error: 'howToEarn must be a string' }
+  }
+  const trimmed = value.trim()
+  if (trimmed.length > HOW_TO_EARN_MAX_LENGTH) {
+    return {
+      error: `howToEarn must be at most ${HOW_TO_EARN_MAX_LENGTH} characters`,
+    }
+  }
+  return { value: trimmed }
+}
 
 function parseStringArray(value: unknown): string[] | null {
   if (value === undefined || value === null || value === '') return []
@@ -240,7 +259,8 @@ export const createBadgeDefinition = async (
   req: AuthRequest,
   res: Response
 ): Promise<void> => {
-  const { name, description, level, criteria, eligibleGrades, autoAward } = req.body
+  const { name, description, howToEarn, level, criteria, eligibleGrades, autoAward } =
+    req.body
 
   const trimmedName = typeof name === 'string' ? name.trim() : ''
   const trimmedDescription =
@@ -254,6 +274,12 @@ export const createBadgeDefinition = async (
       false,
       'Missing or invalid required fields: name, description, level (positive integer)'
     )
+    return
+  }
+
+  const parsedHowToEarn = parseHowToEarn(howToEarn)
+  if (parsedHowToEarn.error) {
+    sendResponse(res, 400, false, parsedHowToEarn.error)
     return
   }
 
@@ -328,12 +354,15 @@ export const createBadgeDefinition = async (
     const badge = await BadgeDefinition.create({
       name: trimmedName,
       description: trimmedDescription,
+      howToEarn: parsedHowToEarn.value ?? '',
       level: parsedLevel,
       eligibleGrades: gradeResult.ids ?? [],
       autoAward: false,
       icon,
       createdBy,
     })
+
+    await enqueueBadgeEvaluationForBadge(String(badge._id))
 
     const populated = await BadgeDefinition.findById(badge._id)
       .populate('criteria', CRITERIA_POPULATE_FIELDS)
@@ -375,10 +404,12 @@ export const updateBadgeDefinition = async (
     return
   }
 
-  const { name, description, level, criteria, eligibleGrades, autoAward } = req.body
+  const { name, description, howToEarn, level, criteria, eligibleGrades, autoAward } =
+    req.body
 
   const hasName = name !== undefined
   const hasDescription = description !== undefined
+  const hasHowToEarn = howToEarn !== undefined
   const hasLevel = level !== undefined && level !== '' && level !== null
   const hasCriteria = criteria !== undefined
   const hasEligibleGrades = eligibleGrades !== undefined
@@ -387,6 +418,7 @@ export const updateBadgeDefinition = async (
   if (
     !hasName &&
     !hasDescription &&
+    !hasHowToEarn &&
     !hasLevel &&
     !hasCriteria &&
     !hasEligibleGrades &&
@@ -397,7 +429,7 @@ export const updateBadgeDefinition = async (
       res,
       400,
       false,
-      'At least one field (name, description, level, criteria, eligibleGrades, autoAward, or icon) required'
+      'At least one field (name, description, howToEarn, level, criteria, eligibleGrades, autoAward, or icon) required'
     )
     return
   }
@@ -421,6 +453,16 @@ export const updateBadgeDefinition = async (
     if (!trimmedDescription) {
       sendResponse(res, 400, false, 'description cannot be empty')
       return
+    }
+
+    let nextHowToEarn = badge.howToEarn ?? ''
+    if (hasHowToEarn) {
+      const parsedHowToEarn = parseHowToEarn(howToEarn)
+      if (parsedHowToEarn.error) {
+        sendResponse(res, 400, false, parsedHowToEarn.error)
+        return
+      }
+      nextHowToEarn = parsedHowToEarn.value ?? ''
     }
 
     let nextLevel = badge.level
@@ -492,7 +534,7 @@ export const updateBadgeDefinition = async (
           res,
           400,
           false,
-          'autoAward requires at least one automatic criteria (attributeAverage, attendanceRate, or academicAverage)'
+          'autoAward requires at least one automatic criterion'
         )
         return
       }
@@ -502,6 +544,9 @@ export const updateBadgeDefinition = async (
     if (trimmedName !== badge.name) updateData.name = trimmedName
     if (trimmedDescription !== badge.description) {
       updateData.description = trimmedDescription
+    }
+    if (nextHowToEarn !== (badge.howToEarn ?? '')) {
+      updateData.howToEarn = nextHowToEarn
     }
     if (nextLevel !== badge.level) updateData.level = nextLevel
     if (nextAutoAward !== badge.autoAward) updateData.autoAward = nextAutoAward
@@ -532,6 +577,8 @@ export const updateBadgeDefinition = async (
       .populate('criteria', CRITERIA_POPULATE_FIELDS)
       .populate('eligibleGrades', 'level description')
       .populate('createdBy', 'firstName lastName email role')
+
+    await enqueueBadgeEvaluationForBadge(id)
 
     sendResponse(res, 200, true, 'Badge definition updated successfully', updated)
   } catch (error: any) {
@@ -595,6 +642,7 @@ export const deleteBadgeDefinition = async (
     deleteIcon(badge.icon, 'badge')
 
     await BadgeDefinition.findByIdAndDelete(id)
+    await enqueueBadgeEvaluationForBadge(id)
     sendResponse(res, 200, true, 'Badge definition deleted successfully')
   } catch (error) {
     sendResponse(
