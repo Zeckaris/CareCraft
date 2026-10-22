@@ -9,6 +9,8 @@ export interface INotification extends Document {
   message: string
   isRead: boolean
   priority: BroadcastPriority
-  broadcastId?: Types.ObjectId | null; 
+  broadcastId?: Types.ObjectId | null
+  studentId?: Types.ObjectId | null
+  badgeId?: Types.ObjectId | null
   createdAt: Date
 }

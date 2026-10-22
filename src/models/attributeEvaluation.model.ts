@@ -14,6 +14,7 @@ const attributeEvaluationSchema = new Schema<IAttributeEvaluation>(
   {
     studentId: { type: Schema.Types.ObjectId, ref: 'Student', required: true },
     studentEnrollmentId: { type: Schema.Types.ObjectId, ref: 'StudentEnrollment', required: true },
+    academicTermId: { type: Schema.Types.ObjectId, ref: 'AcademicTerm', default: null },
     teacherId: { type: Schema.Types.ObjectId, ref: 'UserAccount', required: true },
     attributes: { type: [attributeItemSchema], required: true },
     totalScore: { type: Number, required: true },

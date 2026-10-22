@@ -9,7 +9,9 @@ const notificationSchema = new Schema<INotification>(
     message: { type: String, required: true },
     isRead: { type: Boolean, default: false },
     priority: { type: String, enum: ['urgent', 'normal', 'low'], default: 'normal' },
-    broadcastId: { type: Schema.Types.ObjectId, ref: 'BroadcastMessage', default: null }
+    broadcastId: { type: Schema.Types.ObjectId, ref: 'BroadcastMessage', default: null },
+    studentId: { type: Schema.Types.ObjectId, ref: 'Student', default: null },
+    badgeId: { type: Schema.Types.ObjectId, ref: 'BadgeDefinition', default: null }
   },
   {
     timestamps: { createdAt: 'createdAt', updatedAt: false }

@@ -5,6 +5,7 @@ const badgeDefinitionSchema = new Schema<IBadgeDefinition>(
   {
     name: { type: String, required: true, trim: true },
     description: { type: String, required: true, trim: true },
+    howToEarn: { type: String, trim: true, default: '', maxlength: 500 },
     icon: { type: String, default: '' },
     createdBy: {
       type: Schema.Types.ObjectId,

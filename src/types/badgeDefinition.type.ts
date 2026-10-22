@@ -4,6 +4,8 @@ export interface IBadgeDefinition extends Document {
   _id: Types.ObjectId
   name: string
   description: string
+  /** Optional teacher-facing explanation of how the badge is earned. */
+  howToEarn: string
   icon?: string
   level: number
   /**

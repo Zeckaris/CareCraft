@@ -10,6 +10,7 @@ export interface IAttributeEvaluation extends Document {
   _id: Types.ObjectId
   studentId: Types.ObjectId
   studentEnrollmentId: Types.ObjectId
+  academicTermId?: Types.ObjectId | null
   teacherId: Types.ObjectId
   attributes: IAttributeItem[]
   totalScore: number
