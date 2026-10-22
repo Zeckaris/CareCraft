@@ -15,6 +15,10 @@ export interface IBadgeDefinition extends Document {
   eligibleGrades: Types.ObjectId[]
   /** Reserved for the phase-2 background evaluator. */
   autoAward: boolean
+  /** Optional gift awarded together with the badge. */
+  giftId?: Types.ObjectId | null
+  /** Required when giftId is set; whole number from 1 to 100. */
+  giftQuantity?: number | null
   createdBy: Types.ObjectId
   createdAt: Date
   /** Virtual-populated from BadgeCriteria.badgeDefinitionId. */

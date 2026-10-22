@@ -1,6 +1,7 @@
 import { Document, Types } from 'mongoose'
 
 export type StudentBadgeSource = 'teacher' | 'admin' | 'system'
+export type StudentBadgeGiftStatus = 'none' | 'pending' | 'given'
 
 export interface IStudentBadge extends Document {
   _id: Types.ObjectId
@@ -14,5 +15,13 @@ export interface IStudentBadge extends Document {
   /** Null only for future system awards. */
   awardedBy?: Types.ObjectId | null
   note?: string
+  /** Gift snapshot taken when the badge was awarded. */
+  giftId?: Types.ObjectId | null
+  giftName?: string
+  giftQuantity?: number | null
+  giftStatus?: StudentBadgeGiftStatus
+  giftGivenAt?: Date | null
+  giftGivenBy?: Types.ObjectId | null
+  giftNote?: string
   createdAt: Date
 }

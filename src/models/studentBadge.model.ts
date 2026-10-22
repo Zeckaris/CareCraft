@@ -36,6 +36,25 @@ const studentBadgeSchema = new Schema<IStudentBadge>(
       default: null,
     },
     note: { type: String, trim: true, default: '' },
+    giftId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Gift',
+      default: null,
+    },
+    giftName: { type: String, trim: true, default: '' },
+    giftQuantity: { type: Number, default: null, min: 1, max: 100 },
+    giftStatus: {
+      type: String,
+      enum: ['none', 'pending', 'given'],
+      default: 'none',
+    },
+    giftGivenAt: { type: Date, default: null },
+    giftGivenBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'UserAccount',
+      default: null,
+    },
+    giftNote: { type: String, trim: true, default: '', maxlength: 300 },
   },
   {
     timestamps: { createdAt: 'createdAt', updatedAt: false },
@@ -50,6 +69,8 @@ studentBadgeSchema.index(
 studentBadgeSchema.index({ studentId: 1, academicTermId: 1 })
 studentBadgeSchema.index({ badgeId: 1 })
 studentBadgeSchema.index({ schoolYear: 1 })
+studentBadgeSchema.index({ giftId: 1 })
+studentBadgeSchema.index({ giftStatus: 1 })
 
 export const StudentBadge = model<IStudentBadge>(
   'StudentBadge',

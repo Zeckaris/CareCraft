@@ -21,6 +21,17 @@ const badgeDefinitionSchema = new Schema<IBadgeDefinition>(
       { type: Schema.Types.ObjectId, ref: 'Grade', required: true },
     ],
     autoAward: { type: Boolean, default: false },
+    giftId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Gift',
+      default: null,
+    },
+    giftQuantity: {
+      type: Number,
+      default: null,
+      min: 1,
+      max: 100,
+    },
   },
   {
     timestamps: { createdAt: 'createdAt', updatedAt: false },
