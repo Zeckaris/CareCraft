@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { Types } from 'mongoose'
 import { Schedule } from '../models/schedule.model.js'
 import { ScheduleEntry } from '../models/scheduleEntry.model.js'
+import { GenerationJob } from '../models/generationJob.model.js'
 import { sendResponse } from '../utils/sendResponse.util.js'
 import { normalizeYear } from '../utils/yearNormalizer.js'
 import { isValidSchoolYear } from '../utils/schoolYear.util.js'
@@ -312,6 +313,14 @@ export const deleteSchedule = async (req: Request, res: Response): Promise<void>
       )
       return
     }
+
+    await Promise.all([
+      GenerationJob.updateMany(
+        { 'result.scheduleId': schedule._id },
+        { $set: { 'result.scheduleId': null } }
+      ),
+      Schedule.updateMany({ clonedFrom: schedule._id }, { $set: { clonedFrom: null } }),
+    ])
 
     const deleted = await ScheduleEntry.deleteMany({ scheduleId: schedule._id })
     await Schedule.deleteOne({ _id: schedule._id })

@@ -269,6 +269,7 @@ export async function persistDraftSchedule(input: PersistInput): Promise<any> {
       )
     }
   } catch (error) {
+    await ScheduleEntry.deleteMany({ scheduleId: schedule._id })
     await Schedule.deleteOne({ _id: schedule._id })
     await restoreArchivedToDraft(archivedIds)
     throw error
