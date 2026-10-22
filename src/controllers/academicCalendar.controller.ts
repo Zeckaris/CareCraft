@@ -589,6 +589,19 @@ export const deleteCalendar = async (req: Request, res: Response) => {
     const calendar = await AcademicCalendar.findById(req.params.id);
     if (!calendar) return sendResponse(res, 404, false, "Calendar not found");
 
+    const snapshot = await getCurrentAcademicSnapshot();
+    if (
+      snapshot.currentCalendar &&
+      String(snapshot.currentCalendar._id) === String(calendar._id)
+    ) {
+      return sendResponse(
+        res,
+        400,
+        false,
+        "Cannot delete the current calendar. Update its dates or create another calendar that covers today first."
+      );
+    }
+
     const year = normalizeYear(String(calendar.academicYear));
     const variants = getYearVariants(year);
     const referenceChecks: ReferenceCheck[] = [

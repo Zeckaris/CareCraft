@@ -470,6 +470,19 @@ export const deleteTerm = async (req: Request, res: Response) => {
     const term = await AcademicTerm.findById(req.params.id);
     if (!term) return sendResponse(res, 404, false, "Term not found");
 
+    const snapshot = await getCurrentAcademicSnapshot();
+    if (
+      snapshot.currentTerm &&
+      String(snapshot.currentTerm._id) === String(term._id)
+    ) {
+      return sendResponse(
+        res,
+        400,
+        false,
+        "Cannot delete the current term. Update its dates or create another term that covers today first."
+      );
+    }
+
     if (await guardDeleteReferences(res, 'term', term._id, TERM_REFERENCE_CHECKS)) return;
 
     await AcademicTerm.deleteOne({ _id: term._id });

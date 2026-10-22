@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { SchoolInfo } from '../../models/schoolInfo.model.js';
 import { ISchoolFeatures } from '../../types/schoolInfo.type.js';
 import { getDefaultFeatures, normalizeFeatures } from '../../service/feature.service.js';
+import { ensureSchoolInfo, SCHOOL_INFO_SINGLETON_ID } from '../../service/schoolInfo.service.js';
 import { sendResponse } from '../../utils/sendResponse.util.js';
 
 // Cloudinary integration
@@ -230,6 +231,7 @@ export const createSchoolInfo = async (req: Request, res: Response): Promise<voi
 
     const schoolInfo = new SchoolInfo({
       ...bodyData,
+      _id: SCHOOL_INFO_SINGLETON_ID,
       telephone: telephone.values,
       logo: logoPath,
     });
@@ -248,18 +250,19 @@ export const createSchoolInfo = async (req: Request, res: Response): Promise<voi
       sendResponse(res, 400, false, "Validation failed", null, { details: validationErrors });
       return;
     }
-    
+
+    if (error.code === 11000) {
+      sendResponse(res, 400, false, "School info already exists. Please update instead.");
+      return;
+    }
+
     sendResponse(res, 500, false, "Internal server error", null, error);
   }
 };
 
 export const getSchoolInfo = async (req: Request, res: Response): Promise<void> => {
   try {
-    const schoolInfo = await SchoolInfo.findOne();
-    if (!schoolInfo) {
-      sendResponse(res, 404, false, "School info not found");
-      return;
-    }
+    const schoolInfo = await ensureSchoolInfo();
     sendResponse(
       res,
       200,
@@ -305,12 +308,6 @@ export const getBranding = async (req: Request, res: Response): Promise<void> =>
 
 export const updateSchoolInfo = async (req: Request, res: Response): Promise<void> => {
   try {
-    const schoolInfo = await SchoolInfo.findOne();
-    if (!schoolInfo) {
-      sendResponse(res, 404, false, "School info not found. Please create one first.");
-      return;
-    }
-
     const telephone = parseTelephoneInput(req.body);
     if (!telephone.ok) {
       sendResponse(res, 400, false, telephone.message);
@@ -323,6 +320,7 @@ export const updateSchoolInfo = async (req: Request, res: Response): Promise<voi
       return;
     }
 
+    const schoolInfo = await ensureSchoolInfo();
     let logoPath: string | null | undefined = schoolInfo.logo;
     if (req.file) {
       // Delete old logo if exists
@@ -382,12 +380,6 @@ export const updateSchoolInfo = async (req: Request, res: Response): Promise<voi
 
 export const updateBranding = async (req: Request, res: Response): Promise<void> => {
   try {
-    const schoolInfo = await SchoolInfo.findOne();
-    if (!schoolInfo) {
-      sendResponse(res, 404, false, "School info not found. Please create one first.");
-      return;
-    }
-
     const validation = validateBrandingUpdate(req.body);
     if (!validation.isValid) {
       sendResponse(res, 400, false, "Invalid branding configuration", null, { 
@@ -396,6 +388,7 @@ export const updateBranding = async (req: Request, res: Response): Promise<void>
       return;
     }
 
+    const schoolInfo = await ensureSchoolInfo();
     const updateData: Partial<BrandingUpdate> = {};
     if (req.body.theme !== undefined) updateData.theme = req.body.theme;
     if (req.body.fontFamily !== undefined) updateData.fontFamily = req.body.fontFamily;
@@ -431,12 +424,6 @@ type FeatureKey = (typeof FEATURE_KEYS)[number];
 
 export const updateSchoolFeatures = async (req: Request, res: Response): Promise<void> => {
   try {
-    const schoolInfo = await SchoolInfo.findOne();
-    if (!schoolInfo) {
-      sendResponse(res, 404, false, "School info not found. Please create one first.");
-      return;
-    }
-
     const body = req.body;
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       sendResponse(res, 400, false, "Request body must be an object");
@@ -473,6 +460,7 @@ export const updateSchoolFeatures = async (req: Request, res: Response): Promise
       return;
     }
 
+    const schoolInfo = await ensureSchoolInfo();
     const features = {
       ...normalizeFeatures(schoolInfo.features),
       ...updates,
@@ -502,29 +490,11 @@ export const updateSchoolFeatures = async (req: Request, res: Response): Promise
   }
 };
 
-export const deleteSchoolInfo = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const schoolInfo = await SchoolInfo.findOne();
-    if (!schoolInfo) {
-      sendResponse(res, 404, false, "School info not found");
-      return;
-    }
-
-    // Optional: delete logo from Cloudinary
-    if (schoolInfo.logo) {
-      try {
-        const urlParts = schoolInfo.logo.split('/');
-        const filenameWithExt = urlParts[urlParts.length - 1];
-        const publicId = urlParts.slice(-2, -1)[0] + '/' + filenameWithExt.split('.')[0];
-        await deleteFromCloudinary(publicId);
-      } catch (deleteErr) {
-        console.warn('Failed to delete Cloudinary logo on delete:', deleteErr);
-      }
-    }
-
-    await SchoolInfo.findByIdAndDelete(schoolInfo._id);
-    sendResponse(res, 200, true, "School info deleted successfully");
-  } catch (error) {
-    sendResponse(res, 500, false, "Internal server error", null, error);
-  }
+export const deleteSchoolInfo = async (_req: Request, res: Response): Promise<void> => {
+  sendResponse(
+    res,
+    400,
+    false,
+    "School info is required and cannot be deleted. Update the school profile instead."
+  );
 };
