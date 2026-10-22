@@ -1,316 +1,817 @@
-import { Request, Response } from 'express';
-import mongoose from 'mongoose';
-import { BadgeDefinition } from '../models/badgeDefinition.model.js';
-import { BadgeCriteria } from '../models/badgeCriteria.model.js';
-import { StudentBadge } from '../models/studentBadge.model.js';
-import { AttributeCategory } from '../models/attributeCategory.model.js';
-import { ActionPlan } from '../models/actionPlan.model.js';
-import UserAccount from '../models/userAccount.model.js';
-import { sendResponse } from '../utils/sendResponse.util.js';
-
-
-import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.util.js';
+import { Request, Response } from 'express'
+import mongoose from 'mongoose'
+import { BadgeDefinition } from '../models/badgeDefinition.model.js'
+import { BadgeCriteria } from '../models/badgeCriteria.model.js'
+import { StudentBadge } from '../models/studentBadge.model.js'
+import { AttributeCategory } from '../models/attributeCategory.model.js'
+import { Grade } from '../models/grade.model.js'
+import { Gift } from '../models/gift.model.js'
+import { BadgeAwardSuppression } from '../models/badgeAwardSuppression.model.js'
+import { Notification } from '../models/notification.model.js'
+import { guardDeleteReferences, type ReferenceCheck } from '../utils/referenceGuard.util.js'
+import { sendResponse } from '../utils/sendResponse.util.js'
+import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.util.js'
+import { AUTOMATIC_CRITERIA_TYPES } from '../badges/criteriaRegistry.js'
+import { enqueueBadgeEvaluationForBadge } from '../service/badgeEvaluationQueue.service.js'
 
 interface AuthRequest extends Request {
   user?: {
-    id: string;
-    email: string;
-    role: 'admin' | 'teacher' | 'parent' | 'student' | 'coordinator';
-  };
-  file?: Express.Multer.File;
+    id: string
+    email: string
+    role: 'admin' | 'teacher' | 'parent' | 'student' | 'coordinator'
+  }
+  file?: Express.Multer.File
 }
 
-export const getAllBadgeDefinitions = async (req: Request, res: Response): Promise<void> => {
-  const { page = 1, limit = 10, name, level, attributeCategoryId } = req.query;
-  const skip = (Number(page) - 1) * Number(limit);
+const CRITERIA_POPULATE_FIELDS =
+  'badgeDefinitionId type attributeCategoryId minScore minPercentage minRecordedSchoolDays minLockedWeightPercentage minEvaluationCount subjectId mode minDays minPoints scope description createdAt'
 
-  const filter: any = {};
-  if (name) filter.name = { $regex: name as string, $options: 'i' };
-  if (level) filter.level = Number(level);
+const HOW_TO_EARN_MAX_LENGTH = 500
+const GIFT_POPULATE_FIELDS = 'name description image isActive'
+
+// ─── helpers ─────────────────────────────────────────────────────────────────
+
+function parseHowToEarn(
+  value: unknown
+): { value?: string; error?: string } {
+  if (value === undefined || value === null) return {}
+  if (typeof value !== 'string') {
+    return { error: 'howToEarn must be a string' }
+  }
+  const trimmed = value.trim()
+  if (trimmed.length > HOW_TO_EARN_MAX_LENGTH) {
+    return {
+      error: `howToEarn must be at most ${HOW_TO_EARN_MAX_LENGTH} characters`,
+    }
+  }
+  return { value: trimmed }
+}
+
+function parseStringArray(value: unknown): string[] | null {
+  if (value === undefined || value === null || value === '') return []
+  if (Array.isArray(value)) return value.map(String)
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return []
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (!Array.isArray(parsed)) return null
+        return parsed.map(String)
+      } catch {
+        return null
+      }
+    }
+    return trimmed.split(',').map((entry) => entry.trim()).filter(Boolean)
+  }
+  return null
+}
+
+function parseBoolean(value: unknown): boolean | undefined | null {
+  if (value === undefined || value === null || value === '') return undefined
+  if (value === true || value === 'true') return true
+  if (value === false || value === 'false') return false
+  return null
+}
+
+function parseLevel(value: unknown): number | null {
+  if (value === undefined || value === null || value === '') return null
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 1) return null
+  return parsed
+}
+
+function parseGiftId(
+  value: unknown
+): { value?: mongoose.Types.ObjectId | null; error?: string } {
+  if (value === undefined) return {}
+  if (value === null || value === '' || value === 'null') {
+    return { value: null }
+  }
+  if (
+    typeof value !== 'string' &&
+    !(value instanceof mongoose.Types.ObjectId)
+  ) {
+    return { error: 'giftId must be a valid gift ID or empty' }
+  }
+  const id = String(value)
+  if (!mongoose.isValidObjectId(id)) {
+    return { error: 'Invalid giftId' }
+  }
+  return { value: new mongoose.Types.ObjectId(id) }
+}
+
+function parseGiftQuantity(
+  value: unknown
+): { value?: number | null; error?: string } {
+  if (value === undefined) return {}
+  if (value === null || value === '') return { value: null }
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return { error: 'giftQuantity must be a whole number between 1 and 100' }
+  }
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) {
+    return { error: 'giftQuantity must be a whole number between 1 and 100' }
+  }
+  return { value: parsed }
+}
+
+async function resolveEligibleGrades(
+  raw: unknown
+): Promise<{ ids?: mongoose.Types.ObjectId[]; error?: string }> {
+  const values = parseStringArray(raw)
+  if (values === null) return { error: 'eligibleGrades must be an array of grade IDs' }
+
+  const ids: mongoose.Types.ObjectId[] = []
+  const seen = new Set<string>()
+  for (const value of values) {
+    if (!mongoose.isValidObjectId(value)) {
+      return { error: `Invalid eligible grade ID: ${value}` }
+    }
+    if (!seen.has(value)) {
+      seen.add(value)
+      ids.push(new mongoose.Types.ObjectId(value))
+    }
+  }
+
+  if (ids.length > 0) {
+    const found = await Grade.countDocuments({ _id: { $in: ids } })
+    if (found !== ids.length) {
+      return { error: 'One or more eligible grade IDs do not exist' }
+    }
+  }
+
+  return { ids }
+}
+
+function sameIdSet(a: string[], b: string[]): boolean {
+  const setA = new Set(a)
+  const setB = new Set(b)
+  if (setA.size !== a.length || setB.size !== b.length) return false
+  if (setA.size !== setB.size) return false
+  for (const id of setA) {
+    if (!setB.has(id)) return false
+  }
+  return true
+}
+
+function deleteIcon(icon: string | undefined | null, label: string) {
+  if (!icon) return
+  try {
+    const urlParts = icon.split('/')
+    const filenameWithExt = urlParts[urlParts.length - 1]
+    const publicId =
+      urlParts.slice(-2, -1)[0] + '/' + filenameWithExt.split('.')[0]
+    void deleteFromCloudinary(publicId).catch((error) => {
+      console.warn(`Failed to delete Cloudinary ${label} icon:`, error)
+    })
+  } catch (error) {
+    console.warn(`Failed to parse Cloudinary ${label} icon URL:`, error)
+  }
+}
+
+// ─── list ────────────────────────────────────────────────────────────────────
+
+export const getAllBadgeDefinitions = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const { page = 1, limit = 10, name, level, attributeCategoryId, autoAward, eligibleGradeId } =
+    req.query
+  const skip = (Number(page) - 1) * Number(limit)
+
+  const filter: any = {}
+  if (name) filter.name = { $regex: name as string, $options: 'i' }
+  if (level) {
+    const parsedLevel = parseLevel(level)
+    if (parsedLevel === null) {
+      sendResponse(res, 400, false, 'Invalid level')
+      return
+    }
+    filter.level = parsedLevel
+  }
+  if (autoAward !== undefined) {
+    const parsed = parseBoolean(autoAward)
+    if (parsed === null || parsed === undefined) {
+      sendResponse(res, 400, false, 'Invalid autoAward: must be true or false')
+      return
+    }
+    filter.autoAward = parsed
+  }
+  if (eligibleGradeId) {
+    if (!mongoose.isValidObjectId(eligibleGradeId)) {
+      sendResponse(res, 400, false, 'Invalid eligibleGradeId')
+      return
+    }
+    const grade = await Grade.findById(eligibleGradeId)
+    if (!grade) {
+      sendResponse(res, 404, false, 'Grade not found')
+      return
+    }
+    // Empty eligibleGrades means "no grade eligible yet", so it must not match.
+    filter.eligibleGrades = new mongoose.Types.ObjectId(String(eligibleGradeId))
+  }
   if (attributeCategoryId) {
     if (!mongoose.isValidObjectId(attributeCategoryId)) {
-      sendResponse(res, 400, false, 'Invalid attributeCategoryId');
-      return;
+      sendResponse(res, 400, false, 'Invalid attributeCategoryId')
+      return
     }
-    const attributeCategory = await AttributeCategory.findById(attributeCategoryId);
+    const attributeCategory = await AttributeCategory.findById(attributeCategoryId)
     if (!attributeCategory) {
-      sendResponse(res, 404, false, 'AttributeCategory not found');
-      return;
+      sendResponse(res, 404, false, 'AttributeCategory not found')
+      return
     }
-    const criteria = await BadgeCriteria.find({ attributeCategoryId }).select('badgeDefinitionId').lean();
-    filter._id = { $in: criteria.map(c => c.badgeDefinitionId) };
+    const criteria = await BadgeCriteria.find({
+      $or: [
+        { attributeCategoryId },
+        { type: 'attributeAverage', attributeCategoryId: null },
+      ],
+    })
+      .select('badgeDefinitionId')
+      .lean()
+    filter._id = {
+      $in: criteria.map((c) => c.badgeDefinitionId),
+    }
   }
 
   try {
     const badges = await BadgeDefinition.find(filter)
-      .populate('criteria', 'type attributeCategoryId minScore actionPlanId minProgress minObservations scope')
+      .populate('criteria', CRITERIA_POPULATE_FIELDS)
+      .populate('giftId', GIFT_POPULATE_FIELDS)
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(Number(limit));
-    const total = await BadgeDefinition.countDocuments(filter);
+      .limit(Number(limit))
+    const total = await BadgeDefinition.countDocuments(filter)
 
     sendResponse(res, 200, true, 'Badge definitions fetched successfully', badges, null, {
       total,
       page: Number(page),
-      limit: Number(limit)
-    });
+      limit: Number(limit),
+    })
   } catch (error) {
-    sendResponse(res, 500, false, `Server error fetching badge definitions: ${(error as Error).message}`, null, error);
+    sendResponse(
+      res,
+      500,
+      false,
+      `Server error fetching badge definitions: ${(error as Error).message}`,
+      null,
+      error
+    )
   }
-};
+}
 
-export const getBadgeDefinitionById = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+// ─── get by id ───────────────────────────────────────────────────────────────
+
+export const getBadgeDefinitionById = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const { id } = req.params
 
   if (!mongoose.isValidObjectId(id)) {
-    sendResponse(res, 400, false, 'Invalid badge definition ID');
-    return;
+    sendResponse(res, 400, false, 'Invalid badge definition ID')
+    return
   }
 
   try {
     const badge = await BadgeDefinition.findById(id)
-      .populate('criteria', 'type attributeCategoryId minScore actionPlanId minProgress minObservations scope');
+      .populate('criteria', CRITERIA_POPULATE_FIELDS)
+      .populate('eligibleGrades', 'level description')
+      .populate('giftId', GIFT_POPULATE_FIELDS)
     if (!badge) {
-      sendResponse(res, 404, false, 'BadgeDefinition not found');
-      return;
+      sendResponse(res, 404, false, 'BadgeDefinition not found')
+      return
     }
-    sendResponse(res, 200, true, 'Badge definition fetched successfully', badge);
+    sendResponse(res, 200, true, 'Badge definition fetched successfully', badge)
   } catch (error) {
-    sendResponse(res, 500, false, `Server error fetching badge definition: ${(error as Error).message}`, null, error);
+    sendResponse(
+      res,
+      500,
+      false,
+      `Server error fetching badge definition: ${(error as Error).message}`,
+      null,
+      error
+    )
   }
-};
+}
 
-export const createBadgeDefinition = async (req: AuthRequest, res: Response): Promise<void> => {
-  let { name, description, level, criteria = [] } = req.body;
+// ─── create ──────────────────────────────────────────────────────────────────
 
-  // Sanitize
-  name = name?.trim();
-  description = description?.trim();
+export const createBadgeDefinition = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  const { name, description, howToEarn, level, criteria, eligibleGrades, autoAward, giftId, giftQuantity } =
+    req.body
 
-  if (!name || !description || level === undefined) {
-    sendResponse(res, 400, false, 'Missing required fields: name, description, or level');
-    return;
+  const trimmedName = typeof name === 'string' ? name.trim() : ''
+  const trimmedDescription =
+    typeof description === 'string' ? description.trim() : ''
+  const parsedLevel = parseLevel(level)
+
+  if (!trimmedName || !trimmedDescription || parsedLevel === null) {
+    sendResponse(
+      res,
+      400,
+      false,
+      'Missing or invalid required fields: name, description, level (positive integer)'
+    )
+    return
   }
 
-  const createdBy = req.user?.id;
+  const parsedHowToEarn = parseHowToEarn(howToEarn)
+  if (parsedHowToEarn.error) {
+    sendResponse(res, 400, false, parsedHowToEarn.error)
+    return
+  }
+
+  const createdBy = req.user?.id
   if (!createdBy || !mongoose.isValidObjectId(createdBy)) {
-    sendResponse(res, 401, false, 'Authentication error: invalid or missing user');
-    return;
+    sendResponse(res, 401, false, 'Authentication error: invalid or missing user')
+    return
   }
 
-  if (criteria.length > 0 && !criteria.every((id: string) => mongoose.isValidObjectId(id))) {
-    sendResponse(res, 400, false, 'Invalid criteria ID(s)');
-    return;
+  const requestedCriteria = parseStringArray(criteria)
+  if (requestedCriteria === null) {
+    sendResponse(res, 400, false, 'criteria must be an array of criteria IDs')
+    return
+  }
+  if (requestedCriteria.length > 0) {
+    sendResponse(
+      res,
+      400,
+      false,
+      'Criteria cannot be attached at creation. Create the badge first, then add criteria via /api/badgeCriteria.'
+    )
+    return
+  }
+
+  const parsedAutoAward = parseBoolean(autoAward)
+  if (parsedAutoAward === null) {
+    sendResponse(res, 400, false, 'autoAward must be true or false')
+    return
+  }
+  if (parsedAutoAward === true) {
+    sendResponse(
+      res,
+      400,
+      false,
+      'autoAward cannot be enabled before the badge has at least one automatic criteria'
+    )
+    return
+  }
+
+  const gradeResult = await resolveEligibleGrades(eligibleGrades)
+  if (gradeResult.error) {
+    sendResponse(res, 400, false, gradeResult.error)
+    return
+  }
+
+  const parsedGiftId = parseGiftId(giftId)
+  if (parsedGiftId.error) {
+    sendResponse(res, 400, false, parsedGiftId.error)
+    return
+  }
+  const parsedGiftQuantity = parseGiftQuantity(giftQuantity)
+  if (parsedGiftQuantity.error) {
+    sendResponse(res, 400, false, parsedGiftQuantity.error)
+    return
+  }
+  if (parsedGiftId.value) {
+    if (parsedGiftQuantity.value === undefined || parsedGiftQuantity.value === null) {
+      sendResponse(
+        res,
+        400,
+        false,
+        'giftQuantity is required when giftId is set'
+      )
+      return
+    }
+    const gift = await Gift.findById(parsedGiftId.value)
+    if (!gift) {
+      sendResponse(res, 404, false, 'Gift not found')
+      return
+    }
+    if (!gift.isActive) {
+      sendResponse(res, 400, false, 'Cannot attach an inactive gift')
+      return
+    }
+  } else if (
+    parsedGiftQuantity.value !== undefined &&
+    parsedGiftQuantity.value !== null
+  ) {
+    sendResponse(res, 400, false, 'giftQuantity cannot be set without giftId')
+    return
   }
 
   try {
-    let icon: string | undefined;
+    const existing = await BadgeDefinition.findOne({
+      name: trimmedName,
+      level: parsedLevel,
+    })
+    if (existing) {
+      sendResponse(
+        res,
+        400,
+        false,
+        'Badge definition with this name and level already exists'
+      )
+      return
+    }
+
+    let icon: string | undefined
     if (req.file) {
       const uploadResult = await uploadToCloudinary(
         req.file.buffer,
         'icons/badges',
         undefined,
         'image'
-      );
-      icon = uploadResult.url;
+      )
+      icon = uploadResult.url
     }
 
     const badge = await BadgeDefinition.create({
-      name,
-      description,
-      level: Number(level),
-      criteria,
+      name: trimmedName,
+      description: trimmedDescription,
+      howToEarn: parsedHowToEarn.value ?? '',
+      level: parsedLevel,
+      eligibleGrades: gradeResult.ids ?? [],
+      autoAward: false,
       icon,
+      giftId: parsedGiftId.value ?? null,
+      giftQuantity: parsedGiftId.value ? parsedGiftQuantity.value ?? null : null,
       createdBy,
-    });
+    })
+
+    await enqueueBadgeEvaluationForBadge(String(badge._id))
 
     const populated = await BadgeDefinition.findById(badge._id)
-      .populate('criteria', 'type attributeCategoryId minScore actionPlanId minProgress minObservations scope')
-      .populate('createdBy', 'firstName lastName email role');
+      .populate('criteria', CRITERIA_POPULATE_FIELDS)
+      .populate('eligibleGrades', 'level description')
+      .populate('giftId', GIFT_POPULATE_FIELDS)
+      .populate('createdBy', 'firstName lastName email role')
 
-    sendResponse(res, 201, true, 'Badge definition created successfully', populated);
-  } catch (error) {
-    sendResponse(res, 500, false, `Server error creating badge definition: ${(error as Error).message}`, null, error);
+    sendResponse(res, 201, true, 'Badge definition created successfully', populated)
+  } catch (error: any) {
+    if (error?.code === 11000) {
+      sendResponse(
+        res,
+        400,
+        false,
+        'Badge definition with this name and level already exists'
+      )
+      return
+    }
+    sendResponse(
+      res,
+      500,
+      false,
+      `Server error creating badge definition: ${error.message}`,
+      null,
+      error
+    )
   }
-};
+}
 
+// ─── update ──────────────────────────────────────────────────────────────────
 
-
-export const updateBadgeDefinition = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id } = req.params;
+export const updateBadgeDefinition = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  const { id } = req.params
 
   if (!mongoose.isValidObjectId(id)) {
-    sendResponse(res, 400, false, "Invalid badge definition ID");
-    return;
+    sendResponse(res, 400, false, 'Invalid badge definition ID')
+    return
   }
 
-  let { name, description, level, criteria } = req.body;
+  const { name, description, howToEarn, level, criteria, eligibleGrades, autoAward, giftId, giftQuantity } =
+    req.body
 
-  name = name?.trim();
-  description = description?.trim();
+  const hasName = name !== undefined
+  const hasDescription = description !== undefined
+  const hasHowToEarn = howToEarn !== undefined
+  const hasLevel = level !== undefined && level !== '' && level !== null
+  const hasCriteria = criteria !== undefined
+  const hasEligibleGrades = eligibleGrades !== undefined
+  const hasAutoAward = autoAward !== undefined
+  const hasGiftId = giftId !== undefined
+  const hasGiftQuantity = giftQuantity !== undefined
 
-  // At least one field must be provided for update
-  if (!name && !description && level === undefined && criteria === undefined && !req.file) {
-    sendResponse(res, 400, false, "At least one field (name, description, level, criteria, or icon) required");
-    return;
+  if (
+    !hasName &&
+    !hasDescription &&
+    !hasHowToEarn &&
+    !hasLevel &&
+    !hasCriteria &&
+    !hasEligibleGrades &&
+    !hasAutoAward &&
+    !hasGiftId &&
+    !hasGiftQuantity &&
+    !req.file
+  ) {
+    sendResponse(
+      res,
+      400,
+      false,
+      'At least one field (name, description, howToEarn, level, criteria, eligibleGrades, autoAward, giftId, giftQuantity, or icon) required'
+    )
+    return
   }
 
   try {
-    const badge = await BadgeDefinition.findById(id);
+    const badge = await BadgeDefinition.findById(id)
     if (!badge) {
-      sendResponse(res, 404, false, "BadgeDefinition not found");
-      return;
+      sendResponse(res, 404, false, 'BadgeDefinition not found')
+      return
     }
 
-    // Prepare values for duplicate check
-    let checkName = name || badge.name;
-    let checkLevel = badge.level;
+    const trimmedName = hasName ? String(name).trim() : badge.name
+    if (!trimmedName) {
+      sendResponse(res, 400, false, 'name cannot be empty')
+      return
+    }
 
-    // Handle level for duplicate check (only if level is being changed)
-    if (level !== undefined && level !== "" && level !== null) {
-      const parsedLevel = Number(level);
-      if (isNaN(parsedLevel)) {
-        sendResponse(res, 400, false, "Invalid level value - must be a number");
-        return;
+    const trimmedDescription = hasDescription
+      ? String(description).trim()
+      : badge.description
+    if (!trimmedDescription) {
+      sendResponse(res, 400, false, 'description cannot be empty')
+      return
+    }
+
+    let nextHowToEarn = badge.howToEarn ?? ''
+    if (hasHowToEarn) {
+      const parsedHowToEarn = parseHowToEarn(howToEarn)
+      if (parsedHowToEarn.error) {
+        sendResponse(res, 400, false, parsedHowToEarn.error)
+        return
       }
-      checkLevel = parsedLevel;
+      nextHowToEarn = parsedHowToEarn.value ?? ''
     }
 
-    // Duplicate check only when name or level is changing
-    if ((name && name !== badge.name) || checkLevel !== badge.level) {
+    let nextLevel = badge.level
+    if (hasLevel) {
+      const parsedLevel = parseLevel(level)
+      if (parsedLevel === null) {
+        sendResponse(res, 400, false, 'level must be a positive integer')
+        return
+      }
+      nextLevel = parsedLevel
+    }
+
+    if (trimmedName !== badge.name || nextLevel !== badge.level) {
       const existing = await BadgeDefinition.findOne({
-        name: checkName,
-        level: checkLevel,
+        name: trimmedName,
+        level: nextLevel,
         _id: { $ne: id },
-      });
-
+      })
       if (existing) {
-        sendResponse(res, 400, false, "Badge definition with this name and level already exists");
-        return;
+        sendResponse(
+          res,
+          400,
+          false,
+          'Badge definition with this name and level already exists'
+        )
+        return
       }
     }
 
-    // Validate criteria if provided in request
-    if (criteria !== undefined && criteria.length > 0) {
-      const validCriteria = await BadgeCriteria.find({ _id: { $in: criteria } });
-      if (validCriteria.length !== criteria.length) {
-        sendResponse(res, 400, false, "One or more criteria IDs are invalid");
-        return;
+    // Criteria are owned by BadgeCriteria. Accept only an unchanged set so
+    // clients that resubmit the full badge payload keep working.
+    if (hasCriteria) {
+      const requestedCriteria = parseStringArray(criteria)
+      if (requestedCriteria === null) {
+        sendResponse(res, 400, false, 'criteria must be an array of criteria IDs')
+        return
       }
-      for (const crit of validCriteria) {
-        if (!crit.badgeDefinitionId.equals(id)) {
-          sendResponse(res, 400, false, `Criteria ${crit._id} does not belong to this badge definition`);
-          return;
+      const current = await BadgeCriteria.find({ badgeDefinitionId: id })
+        .select('_id')
+        .lean()
+      const currentIds = current.map((c) => String(c._id))
+      if (!sameIdSet(currentIds, requestedCriteria.map(String))) {
+        sendResponse(
+          res,
+          400,
+          false,
+          'criteria cannot be changed here. Add, update, or remove criteria via /api/badgeCriteria.'
+        )
+        return
+      }
+    }
+
+    let nextAutoAward = badge.autoAward
+    if (hasAutoAward) {
+      const parsed = parseBoolean(autoAward)
+      if (parsed === null) {
+        sendResponse(res, 400, false, 'autoAward must be true or false')
+        return
+      }
+      if (parsed !== undefined) nextAutoAward = parsed
+    }
+    if (nextAutoAward) {
+      const automaticCriteriaCount = await BadgeCriteria.countDocuments({
+        badgeDefinitionId: id,
+        type: { $in: AUTOMATIC_CRITERIA_TYPES },
+      })
+      if (automaticCriteriaCount === 0) {
+        sendResponse(
+          res,
+          400,
+          false,
+          'autoAward requires at least one automatic criterion'
+        )
+        return
+      }
+    }
+
+    const updateData: any = {}
+    if (trimmedName !== badge.name) updateData.name = trimmedName
+    if (trimmedDescription !== badge.description) {
+      updateData.description = trimmedDescription
+    }
+    if (nextHowToEarn !== (badge.howToEarn ?? '')) {
+      updateData.howToEarn = nextHowToEarn
+    }
+    if (nextLevel !== badge.level) updateData.level = nextLevel
+    if (nextAutoAward !== badge.autoAward) updateData.autoAward = nextAutoAward
+
+    if (hasEligibleGrades) {
+      const gradeResult = await resolveEligibleGrades(eligibleGrades)
+      if (gradeResult.error) {
+        sendResponse(res, 400, false, gradeResult.error)
+        return
+      }
+      updateData.eligibleGrades = gradeResult.ids ?? []
+    }
+
+    if (hasGiftId || hasGiftQuantity) {
+      let nextGiftId: mongoose.Types.ObjectId | null = badge.giftId ?? null
+      let nextGiftQuantity: number | null = badge.giftQuantity ?? null
+      let giftChanged = false
+
+      if (hasGiftId) {
+        const parsedGiftId = parseGiftId(giftId)
+        if (parsedGiftId.error) {
+          sendResponse(res, 400, false, parsedGiftId.error)
+          return
         }
+        const candidate = parsedGiftId.value ?? null
+        giftChanged = String(badge.giftId ?? '') !== String(candidate ?? '')
+        nextGiftId = candidate
       }
-    }
 
-    // Build update object — only include fields that were actually sent
-    const updateData: any = {};
+      if (nextGiftId) {
+        const parsedGiftQuantity = parseGiftQuantity(giftQuantity)
+        if (parsedGiftQuantity.error) {
+          sendResponse(res, 400, false, parsedGiftQuantity.error)
+          return
+        }
+        if (hasGiftQuantity) {
+          nextGiftQuantity = parsedGiftQuantity.value ?? null
+        }
+        if (
+          nextGiftQuantity === null ||
+          !Number.isInteger(nextGiftQuantity) ||
+          nextGiftQuantity < 1 ||
+          nextGiftQuantity > 100
+        ) {
+          sendResponse(
+            res,
+            400,
+            false,
+            'giftQuantity is required when giftId is set and must be a whole number between 1 and 100'
+          )
+          return
+        }
 
-    if (name !== undefined) {
-      updateData.name = name;
-    }
-    if (description !== undefined) {
-      updateData.description = description;
-    }
-    if (level !== undefined && level !== "" && level !== null) {
-      const parsed = Number(level);
-      if (!isNaN(parsed)) {
-        updateData.level = parsed;
+        const gift = await Gift.findById(nextGiftId)
+        if (!gift) {
+          sendResponse(res, 404, false, 'Gift not found')
+          return
+        }
+        if (giftChanged && !gift.isActive) {
+          sendResponse(res, 400, false, 'Cannot attach an inactive gift')
+          return
+        }
       } else {
-        sendResponse(res, 400, false, "Invalid level value - must be a number");
-        return;
-      }
-    }
-    if (criteria !== undefined) {
-      updateData.criteria = criteria;
-    }
-
-    // Handle icon upload / replacement
-    if (req.file) {
-      // Delete old icon if it exists
-      if (badge.icon) {
-        try {
-          const urlParts = badge.icon.split("/");
-          const filenameWithExt = urlParts[urlParts.length - 1];
-          const publicId = urlParts.slice(-2, -1)[0] + "/" + filenameWithExt.split(".")[0];
-          await deleteFromCloudinary(publicId);
-        } catch (deleteErr) {
-          console.warn("Failed to delete old Cloudinary icon:", deleteErr);
+        if (!hasGiftId) {
+          const parsedGiftQuantity = parseGiftQuantity(giftQuantity)
+          if (parsedGiftQuantity.error) {
+            sendResponse(res, 400, false, parsedGiftQuantity.error)
+            return
+          }
+          if (
+            parsedGiftQuantity.value !== undefined &&
+            parsedGiftQuantity.value !== null
+          ) {
+            sendResponse(
+              res,
+              400,
+              false,
+              'giftQuantity cannot be set without giftId'
+            )
+            return
+          }
         }
+        nextGiftQuantity = null
       }
 
-      // Upload new icon
+      if (giftChanged) updateData.giftId = nextGiftId
+      if (nextGiftQuantity !== (badge.giftQuantity ?? null)) {
+        updateData.giftQuantity = nextGiftQuantity
+      }
+    }
+
+    if (req.file) {
+      deleteIcon(badge.icon, 'old')
       const uploadResult = await uploadToCloudinary(
         req.file.buffer,
-        "icons/badges",
+        'icons/badges',
         undefined,
-        "image"
-      );
-      updateData.icon = uploadResult.url;
+        'image'
+      )
+      updateData.icon = uploadResult.url
     }
 
-    // Perform the update
-    const updated = await BadgeDefinition.findByIdAndUpdate(id, updateData, { new: true })
-      .populate("criteria", "type attributeCategoryId minScore actionPlanId minProgress minObservations scope")
-      .populate("createdBy", "firstName lastName email role");
+    const updated = await BadgeDefinition.findByIdAndUpdate(id, updateData, {
+      new: true,
+    })
+      .populate('criteria', CRITERIA_POPULATE_FIELDS)
+      .populate('eligibleGrades', 'level description')
+      .populate('giftId', GIFT_POPULATE_FIELDS)
+      .populate('createdBy', 'firstName lastName email role')
 
-    sendResponse(res, 200, true, "Badge definition updated successfully", updated);
+    await enqueueBadgeEvaluationForBadge(id)
+
+    sendResponse(res, 200, true, 'Badge definition updated successfully', updated)
+  } catch (error: any) {
+    if (error?.code === 11000) {
+      sendResponse(
+        res,
+        400,
+        false,
+        'Badge definition with this name and level already exists'
+      )
+      return
+    }
+    sendResponse(
+      res,
+      500,
+      false,
+      `Server error updating badge definition: ${error.message}`,
+      null,
+      error
+    )
+  }
+}
+
+// ─── delete ──────────────────────────────────────────────────────────────────
+
+export const deleteBadgeDefinition = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const { id } = req.params
+
+  if (!mongoose.isValidObjectId(id)) {
+    sendResponse(res, 400, false, 'Invalid badge definition ID')
+    return
+  }
+
+  try {
+    const badge = await BadgeDefinition.findById(id)
+    if (!badge) {
+      sendResponse(res, 404, false, 'BadgeDefinition not found')
+      return
+    }
+
+    const referenceChecks: ReferenceCheck[] = [
+      { model: StudentBadge, field: 'badgeId', label: 'student badge(s)' },
+      { model: BadgeCriteria, field: 'badgeDefinitionId', label: 'badge criterion(s)' },
+    ]
+
+    if (await guardDeleteReferences(res, 'badge definition', id, referenceChecks)) return
+
+    await Promise.all([
+      BadgeAwardSuppression.deleteMany({ badgeId: id }),
+      Notification.deleteMany({ badgeId: id }),
+    ])
+
+    deleteIcon(badge.icon, 'badge')
+
+    await BadgeDefinition.findByIdAndDelete(id)
+    await enqueueBadgeEvaluationForBadge(id)
+    sendResponse(res, 200, true, 'Badge definition deleted successfully')
   } catch (error) {
     sendResponse(
       res,
       500,
       false,
-      `Server error updating badge definition: ${(error as Error).message}`,
+      `Server error deleting badge definition: ${(error as Error).message}`,
       null,
       error
-    );
+    )
   }
-};
-
-
-
-
-export const deleteBadgeDefinition = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
-
-  if (!mongoose.isValidObjectId(id)) {
-    sendResponse(res, 400, false, 'Invalid badge definition ID');
-    return;
-  }
-
-  try {
-    const badge = await BadgeDefinition.findById(id);
-    if (!badge) {
-      sendResponse(res, 404, false, 'BadgeDefinition not found');
-      return;
-    }
-
-    const studentBadgeCount = await StudentBadge.countDocuments({ badgeId: id });
-    const criteriaCount = await BadgeCriteria.countDocuments({ badgeDefinitionId: id });
-    const dependencies = [];
-    if (studentBadgeCount > 0) dependencies.push(`${studentBadgeCount} student badge(s)`);
-    if (criteriaCount > 0) dependencies.push(`${criteriaCount} badge criteria`);
-    if (dependencies.length > 0) {
-      sendResponse(res, 400, false, `Cannot delete badge definition; it is used by: ${dependencies.join(', ')}`);
-      return;
-    }
-
-    if (badge.icon) {
-      try {
-        const urlParts = badge.icon.split('/');
-        const filenameWithExt = urlParts[urlParts.length - 1];
-        const publicId = urlParts.slice(-2, -1)[0] + '/' + filenameWithExt.split('.')[0];
-        await deleteFromCloudinary(publicId);
-      } catch (deleteErr) {
-        console.warn('Failed to delete Cloudinary icon on badge delete:', deleteErr);
-      }
-    }
-
-    await BadgeDefinition.findByIdAndDelete(id);
-    sendResponse(res, 200, true, 'Badge definition deleted successfully');
-  } catch (error) {
-    sendResponse(res, 500, false, `Server error deleting badge definition: ${(error as Error).message}`, null, error);
-  }
-};
+}

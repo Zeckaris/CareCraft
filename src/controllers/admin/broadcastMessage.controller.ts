@@ -1,5 +1,6 @@
 import { Response } from "express"
 import { BroadcastMessage } from '../../models/broadcastMessage.model.js'
+import { Notification } from '../../models/notification.model.js'
 import { sendResponse } from '../../utils/sendResponse.util.js'
 import { Types } from "mongoose"
 import { AuthRequest } from '../../middlewares/auth.middleware.js'
@@ -253,6 +254,7 @@ export const deleteBroadcast = async (req: AuthRequest, res: Response): Promise<
             return;
         }
 
+        await Notification.deleteMany({ broadcastId: id });
         await BroadcastMessage.findByIdAndDelete(id);
         sendResponse(res, 200, true, "Broadcast deleted successfully");
     } catch (error) {

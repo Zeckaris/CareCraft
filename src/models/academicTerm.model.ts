@@ -19,14 +19,14 @@ const academicTermSchema = new Schema<IAcademicTerm>(
 );
 
 
-academicTermSchema.pre('save', async function (next) {
-  if (this.isCurrent) {
-    await (this.constructor as any).updateMany(
-      { _id: { $ne: this._id } },
-      { isCurrent: false }
-    );
-  }
-  next();
-});
+// Sequence and name are unique per calendar. Name comparison is case-insensitive.
+academicTermSchema.index(
+  { calendarId: 1, sequence: 1 },
+  { unique: true, name: 'calendar_sequence_unique' }
+);
+academicTermSchema.index(
+  { calendarId: 1, name: 1 },
+  { unique: true, name: 'calendar_name_unique', collation: { locale: 'en', strength: 2 } }
+);
 
 export const AcademicTerm = model<IAcademicTerm>('AcademicTerm', academicTermSchema);

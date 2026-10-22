@@ -1,4 +1,5 @@
 import { Document, Types } from 'mongoose'
+import { BroadcastPriority } from './broadcastMessage.type.js'
 
 export interface INotification extends Document {
   _id: Types.ObjectId
@@ -7,6 +8,9 @@ export interface INotification extends Document {
   type: string
   message: string
   isRead: boolean
-  broadcastId?: Types.ObjectId | null; 
+  priority: BroadcastPriority
+  broadcastId?: Types.ObjectId | null
+  studentId?: Types.ObjectId | null
+  badgeId?: Types.ObjectId | null
   createdAt: Date
 }

@@ -1,6 +1,8 @@
 import { Queue } from 'bullmq';
 import { redisConnection } from './redis.connection.js';
 import { IBroadcastJobData } from '../types/broadcastJob.type.js';
+import { IAbsenceNotificationJobData } from '../types/absenceNotificationJob.type.js';
+import { BadgeEvaluationJobData } from '../types/badgeEvaluationJob.type.js';
 
 /**
  * Central queue manager for all jobs.
@@ -8,5 +10,12 @@ import { IBroadcastJobData } from '../types/broadcastJob.type.js';
  */
 export const queues = {
   broadcast: new Queue<IBroadcastJobData>('broadcast-queue', { connection: redisConnection }),
-  // future queues: studentEnrolment: new Queue<...>(...)
+  absenceNotification: new Queue<IAbsenceNotificationJobData>(
+    'absence-notification-queue',
+    { connection: redisConnection }
+  ),
+  badgeEvaluation: new Queue<BadgeEvaluationJobData>(
+    'badge-evaluation-queue',
+    { connection: redisConnection }
+  ),
 };

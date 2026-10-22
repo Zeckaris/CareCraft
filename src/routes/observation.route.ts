@@ -1,38 +1,35 @@
-import express from 'express';
+import express from 'express'
 import {
   getAllObservations,
   getObservationById,
   createObservation,
   updateObservation,
-  deleteObservation, 
-  getObservationsByTeacherAndGrade,
+  deleteObservation,
   bulkDeleteObservationsByStudent,
-  getObservationsByTeacher,
-  getObservationsByStudentAndDate,
-  getObservationsByCategoryAndGrade
-} from '../controllers/observation.controller.js';
-import { authMiddleware } from '../middlewares/auth.middleware.js';
-import { roleMiddleware } from '../middlewares/role.middleware.js';
+} from '../controllers/observation.controller.js'
+import { authMiddleware } from '../middlewares/auth.middleware.js'
+import { roleMiddleware } from '../middlewares/role.middleware.js'
+import { requireFeatureForRoles } from '../middlewares/feature.middleware.js'
 
-const router = express.Router();
+const router = express.Router()
 
+router.use(
+  authMiddleware,
+  roleMiddleware('admin', 'coordinator', 'teacher', 'parent'),
+  requireFeatureForRoles('observations', ['teacher', 'parent'])
+)
 
-router.get('/', authMiddleware, getAllObservations);
-router.get('/:id', authMiddleware, getObservationById);
+router.get('/', getAllObservations)
+router.post('/', roleMiddleware('teacher'), createObservation)
 
-router.get('/student/:studentId/date', authMiddleware, getObservationsByStudentAndDate);
-router.get('/teacher/:teacherId', authMiddleware, getObservationsByTeacher);
-router.get('/teacher/:teacherId/grade/:gradeId', authMiddleware, getObservationsByTeacherAndGrade);
-router.get('/category/:gradeId', authMiddleware, roleMiddleware('teacher'), getObservationsByCategoryAndGrade);
+router.delete(
+  '/student/:studentId',
+  roleMiddleware('admin', 'coordinator'),
+  bulkDeleteObservationsByStudent
+)
 
+router.get('/:id', getObservationById)
+router.put('/:id', roleMiddleware('teacher'), updateObservation)
+router.delete('/:id', roleMiddleware('admin', 'coordinator', 'teacher'), deleteObservation)
 
-router.post('/', authMiddleware, roleMiddleware('teacher'), createObservation);
-
-
-router.put('/:id', authMiddleware, roleMiddleware('teacher'), updateObservation);
-
-
-router.delete('/:id', authMiddleware, roleMiddleware('teacher'), deleteObservation);
-router.delete('/student/:studentId', authMiddleware, roleMiddleware('admin'), bulkDeleteObservationsByStudent);
-
-export default router;
+export default router

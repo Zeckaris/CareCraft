@@ -3,7 +3,9 @@ import {
   createSchoolInfo,
   getSchoolInfo,
   updateSchoolInfo,
-  updateBranding,        
+  updateBranding,
+  updateSchoolFeatures,
+  getBranding,
   deleteSchoolInfo,
 } from '../../controllers/admin/schoolInfo.controller.js';
 import multer from 'multer'; 
@@ -25,5 +27,11 @@ router.delete("/school-info", authMiddleware,
 
 router.patch("/school-info/branding", authMiddleware,
   roleMiddleware('admin') ,updateBranding);
+
+router.patch("/school-info/features", authMiddleware,
+  roleMiddleware('admin') ,updateSchoolFeatures);
+
+// Read-only branding for any authenticated user (no role restriction).
+router.get("/school-info/branding", authMiddleware, getBranding);
 
 export default router;

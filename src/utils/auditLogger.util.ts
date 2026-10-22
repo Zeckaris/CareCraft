@@ -34,6 +34,7 @@ export const logAudit = async (
       type: options.type,
       message,
       actor: user.id,
+      actorRole: user.role ?? null,
       target: options.target ?? '',
     });
   } catch (error) {

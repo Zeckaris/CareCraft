@@ -1,9 +1,10 @@
 import { Request, Response } from "express"
 import { AssessmentSetup } from '../../models/assessment/assessmentSetup.model.js'
 import { AssessmentType } from '../../models/assessment/assessmentType.model.js'
-import { AssessmentScore } from '../../models/assessment/assessmentScore.model.js'
 import { GradeSubjectAssessment } from '../../models/gradeSubjectAssessment.model.js'
+import { guardDeleteReferences, type ReferenceCheck } from '../../utils/referenceGuard.util.js'
 import { sendResponse } from '../../utils/sendResponse.util.js'
+import { recalcMarksheetsForSetups } from '../../service/assessmentScore.service.js'
 
 export const createAssessmentSetup = async (req: Request, res: Response): Promise<void> => {
     const { name, description, assessmentTypeIds } = req.body
@@ -138,6 +139,12 @@ export const updateAssessmentSetup = async (req: Request, res: Response): Promis
         setup.description = description || setup.description
         await setup.save()
 
+        // A change to the setup's types/weights changes every linked marksheet's
+        // totals and average. Recompute them (and prune removed types).
+        if (assessmentTypeIds && Array.isArray(assessmentTypeIds)) {
+            await recalcMarksheetsForSetups([id])
+        }
+
         const populatedSetup = await AssessmentSetup.findById(id)
             .populate('assessmentTypeIds', 'name weight description')
 
@@ -158,29 +165,23 @@ export const deleteAssessmentSetup = async (req: Request, res: Response): Promis
   }
 
   try {
-    const usedInScore = await AssessmentScore.findOne({ assessmentSetupId: id });
-    const usedInGSA = await GradeSubjectAssessment.findOne({ assessmentSetupId: id });
-
-    if (usedInScore || usedInGSA) {
-      const usedPlaces: string[] = [];
-      if (usedInScore) usedPlaces.push("Assessment Scores");
-      if (usedInGSA) usedPlaces.push("Grade Subject Assessment");
-
-      sendResponse(res, 400, false, `Cannot delete assessment setup because it is referenced in: ${usedPlaces.join(", ")}. Please delete or update the referenced records before removing this assessment setup.`, {
-        references: {
-          assessmentScoreId: usedInScore?._id || null,
-          gradeSubjectAssessmentId: usedInGSA?._id || null,
-        }
-      });
-      return;
-    }
-
-    const deletedSetup = await AssessmentSetup.findByIdAndDelete(id);
-    if (!deletedSetup) {
+    const setup = await AssessmentSetup.findById(id);
+    if (!setup) {
       sendResponse(res, 404, false, "Assessment setup not found");
       return;
     }
 
+    const referenceChecks: ReferenceCheck[] = [
+      {
+        model: GradeSubjectAssessment,
+        field: 'assessmentSetupId',
+        label: 'grade-subject assessment(s)',
+      },
+    ];
+
+    if (await guardDeleteReferences(res, 'assessment setup', id, referenceChecks)) return;
+
+    await AssessmentSetup.findByIdAndDelete(id);
     sendResponse(res, 200, true, "Assessment setup deleted successfully");
   } catch (error) {
     sendResponse(res, 500, false, "Internal server error", null, error);

@@ -18,10 +18,13 @@ const router = express.Router();
 
 router.get('/current', authMiddleware, getCurrentTerm);
 
+// Any authenticated staff member (including teachers) may read the term list
+// for selectors. Writes and the per-calendar read stay admin/coordinator-only.
+router.get('/', authMiddleware, roleMiddleware('admin', 'coordinator', 'teacher'), getAllTerms);
+
 
 router.use(authMiddleware, roleMiddleware('admin', 'coordinator'));
 
-router.get('/', getAllTerms);
 router.get('/calendar/:calendarId', getTermsByCalendar);
 router.get('/:id', getTermById);
 router.post('/', createTerm);

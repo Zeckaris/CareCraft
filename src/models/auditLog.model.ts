@@ -9,11 +9,14 @@ const auditLogSchema = new Schema<IAuditLog>(
       type: Schema.Types.ObjectId, 
       ref: 'UserAccount', 
       required: true 
-    }
+    },
+    actorRole: { type: String, default: null }
   },
   {
     timestamps: { createdAt: 'createdAt', updatedAt: false },
   }
 );
+
+auditLogSchema.index({ createdAt: -1 });
 
 export const AuditLog = model<IAuditLog>('AuditLog', auditLogSchema);

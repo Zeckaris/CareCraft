@@ -1,9 +1,14 @@
 import { Request, Response } from "express"
+import mongoose from "mongoose"
 import { GradeSubjectAssessment } from '../../models/gradeSubjectAssessment.model.js'
 import { AssessmentSetup } from '../../models/assessment/assessmentSetup.model.js'
 import { Subject } from '../../models/subject.model.js'
 import { Grade } from '../../models/grade.model.js'
+import { AssessmentScore } from '../../models/assessment/assessmentScore.model.js'
+import { ConductedAssessment } from '../../models/ConductedAssessment.model.js'
+import { guardDeleteReferences, ReferenceCheck } from '../../utils/referenceGuard.util.js'
 import { sendResponse } from '../../utils/sendResponse.util.js'
+import { recalcMarksheetsForGsa } from '../../service/assessmentScore.service.js'
 
 
 
@@ -77,8 +82,19 @@ export const getAllGradeSubjectAssessments = async (req: Request, res: Response)
         limit = Math.min(limit, 50)
         const skip = (page - 1) * limit
 
-        const total = await GradeSubjectAssessment.countDocuments()
-        const gsas = await GradeSubjectAssessment.find()
+        // Optional grade filter, e.g. for the admin results subject picker.
+        const filter: any = {}
+        const gradeId = req.query.gradeId as string | undefined
+        if (gradeId) {
+            if (!mongoose.isValidObjectId(gradeId)) {
+                sendResponse(res, 400, false, "Invalid gradeId")
+                return
+            }
+            filter.gradeId = gradeId
+        }
+
+        const total = await GradeSubjectAssessment.countDocuments(filter)
+        const gsas = await GradeSubjectAssessment.find(filter)
             .populate('gradeId', 'level description')
             .populate('subjectId', 'name description')
             .populate('assessmentSetupId', 'name description')
@@ -121,16 +137,17 @@ export const getGradeSubjectAssessmentById = async (req: Request, res: Response)
 export const getByGradeLevel = async (req: Request, res: Response): Promise<void> => {
     const { level } = req.params
     
-    if (!level || isNaN(Number(level))) {
+    if (!level || !level.trim()) {
         sendResponse(res, 400, false, "Valid grade level required")
         return
     }
 
     try {
+        // Grade.level is stored as a String — match it as a String, not a Number.
         const gsas = await GradeSubjectAssessment.find()
             .populate({
                 path: 'gradeId',
-                match: { level: Number(level) },
+                match: { level: level.trim() },
                 select: 'level description'
             })
             .populate('subjectId', 'name description')
@@ -192,9 +209,16 @@ export const updateGradeSubjectAssessment = async (req: Request, res: Response):
 
         gsa.gradeId = gradeId || gsa.gradeId
         gsa.subjectId = subjectId || gsa.subjectId
+        const setupChanged =
+            !!assessmentSetupId && String(assessmentSetupId) !== String(gsa.assessmentSetupId)
         gsa.assessmentSetupId = assessmentSetupId || gsa.assessmentSetupId
         
         await gsa.save()
+
+        // Recompute marksheets when the setup this GSA points at changes.
+        if (setupChanged) {
+            await recalcMarksheetsForGsa(id)
+        }
 
         const populated = await GradeSubjectAssessment.findById(id)
             .populate('gradeId', 'level description')
@@ -213,12 +237,20 @@ export const deleteGradeSubjectAssessment = async (req: Request, res: Response):
     const { id } = req.params
     
     try {
-        const gsa = await GradeSubjectAssessment.findByIdAndDelete(id)
+        const gsa = await GradeSubjectAssessment.findById(id)
         if (!gsa) {
             sendResponse(res, 404, false, "Grade-Subject assessment not found")
             return
         }
-        
+
+        const referenceChecks: ReferenceCheck[] = [
+            { model: AssessmentScore, field: 'gsaId', label: 'assessment score(s)' },
+            { model: ConductedAssessment, field: 'gsaId', label: 'conducted assessment(s)' },
+        ]
+
+        if (await guardDeleteReferences(res, 'grade-subject assessment', id, referenceChecks)) return
+
+        await GradeSubjectAssessment.findByIdAndDelete(id)
         sendResponse(res, 200, true, "Grade-Subject assessment deleted")
     } catch (error) {
         sendResponse(res, 500, false, "Internal server error", null, error)

@@ -1,7 +1,11 @@
 import { Request, Response } from "express"
+import { Types } from "mongoose"
 import { AssessmentType } from '../../models/assessment/assessmentType.model.js'
-import { GradeSubjectAssessment } from '../../models/gradeSubjectAssessment.model.js' 
 import { AssessmentSetup } from '../../models/assessment/assessmentSetup.model.js'
+import { AssessmentScore } from '../../models/assessment/assessmentScore.model.js'
+import { ConductedAssessment } from '../../models/ConductedAssessment.model.js'
+import { recalcMarksheetsForAssessmentType } from '../../service/assessmentScore.service.js'
+import { guardDeleteReferences, type ReferenceCheck } from '../../utils/referenceGuard.util.js'
 import { sendResponse } from '../../utils/sendResponse.util.js';
 
 export const createAssessmentType = async (req: Request, res: Response): Promise<void> => {
@@ -72,7 +76,7 @@ export const updateAssessmentType = async (req: Request, res: Response): Promise
         sendResponse(res, 400, false, "At least one field is required")
         return
     }
-    if (weight && (weight < 0 || weight > 100)) {
+    if (weight !== undefined && (weight < 0 || weight > 100)) {
         sendResponse(res, 400, false, "Weight must be between 0 and 100")
         return
     }
@@ -92,10 +96,49 @@ export const updateAssessmentType = async (req: Request, res: Response): Promise
             }
         }
 
+        const weightChanged = weight !== undefined && Number(weight) !== Number(type.weight)
+
+        // The weight is the maximum mark for this type. Refuse a reduction that
+        // would leave an existing stored mark above the new maximum.
+        if (weightChanged && Number(weight) < Number(type.weight)) {
+            const offenders = await AssessmentScore.aggregate([
+                { $unwind: '$scores' },
+                {
+                    $match: {
+                        'scores.assessmentTypeId': new Types.ObjectId(id),
+                        'scores.score': { $gt: Number(weight) },
+                    },
+                },
+                {
+                    $group: {
+                        _id: null,
+                        count: { $sum: 1 },
+                        max: { $max: '$scores.score' },
+                    },
+                },
+            ])
+            const count = offenders[0]?.count ?? 0
+            if (count > 0) {
+                const highest = offenders[0].max
+                sendResponse(
+                    res,
+                    400,
+                    false,
+                    `Cannot reduce "${type.name}" to a maximum of ${weight}: ${count} existing mark(s) exceed it (highest is ${highest}). Keep the maximum at ${highest} or above, or correct those marks first.`
+                )
+                return
+            }
+        }
+
         type.name = name ? name.trim() : type.name
         type.weight = weight !== undefined ? weight : type.weight
         type.description = description || type.description
         await type.save()
+
+        // A weight change alters the average of every marksheet with this type.
+        if (weightChanged) {
+            await recalcMarksheetsForAssessmentType(id)
+        }
 
         sendResponse(res, 200, true, "Assessment type updated successfully", type)
     } catch (error) {
@@ -112,30 +155,33 @@ export const deleteAssessmentType = async (req: Request, res: Response): Promise
   }
 
   try {
-    // Correct field name for AssessmentSetup
-    const usedInSetup = await AssessmentSetup.findOne({ assessmentTypeIds: id })
-    const usedInGSA = await GradeSubjectAssessment.findOne({ conductedStages: id })
-
-    if (usedInSetup || usedInGSA) {
-      const usedPlaces: string[] = []
-      if (usedInSetup) usedPlaces.push("Assessment Setup")
-      if (usedInGSA) usedPlaces.push("Grade Subject Assessment")
-
-      sendResponse(res, 400, false, `Cannot delete assessment type because it is referenced in: ${usedPlaces.join(", ")}. Please delete or update the referenced setup(s) before removing this assessment type.`, {
-        references: {
-          setupId: usedInSetup?._id || null,
-          gradeSubjectAssessmentId: usedInGSA?._id || null,
-        }
-      })
-      return
-    }
-
-    const deletedType = await AssessmentType.findByIdAndDelete(id)
-    if (!deletedType) {
+    const assessmentType = await AssessmentType.findById(id)
+    if (!assessmentType) {
       sendResponse(res, 404, false, "Assessment type not found")
       return
     }
 
+    const referenceChecks: ReferenceCheck[] = [
+      {
+        model: AssessmentSetup,
+        field: 'assessmentTypeIds',
+        label: 'assessment setup(s)',
+      },
+      {
+        model: ConductedAssessment,
+        field: ['conductedStages', 'lockedStages'],
+        label: 'conducted assessment(s)',
+      },
+      {
+        model: AssessmentScore,
+        field: 'scores.assessmentTypeId',
+        label: 'assessment score(s)',
+      },
+    ]
+
+    if (await guardDeleteReferences(res, 'assessment type', id, referenceChecks)) return
+
+    await AssessmentType.findByIdAndDelete(id)
     sendResponse(res, 200, true, "Assessment type deleted successfully")
   } catch (error) {
     sendResponse(res, 500, false, "Internal server error", null, error)

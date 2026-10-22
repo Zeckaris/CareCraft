@@ -23,6 +23,7 @@ import attributeRouter from './routes/attributeCategory.route.js';
 import badgeDefinitionRouter from './routes/badgeDefinition.route.js';
 import badgeCriteriaRouter from './routes/badgeCriteria.route.js';
 import studentBadgeRouter from './routes/studentBadge.route.js';
+import giftRouter from './routes/gift.route.js';
 import actionPlanRouter   from './routes/actionPlan.route.js';
 import attributeEvaluationRouter from './routes/attributeEvaluation.route.js';
 import sharedPlanTemplateRouter from './routes/sharedPlanTemplate.route.js';
@@ -34,8 +35,15 @@ import conductedAssessmentRouter from './routes/conductedAssessment.route.js';
 import adminSecurityRouter from './routes/admin/adminSecurity.route.js';
 import broadcastMessageRouter from './routes/admin/broadcastMessage.route.js';
 import notificationRouter from './routes/notification.route.js';
+import sectionRouter from './routes/section.route.js';
+import teachingAssignmentRouter from './routes/teachingAssignment.route.js';
+import attendanceRouter from './routes/attendance.route.js';
+import scheduleRouter from './routes/schedule.route.js';
+import { recoverStaleGenerationJobs } from './service/scheduleGeneration.service.js';
+import { ensureScheduleIndexes } from './utils/scheduleIndexes.util.js';
 
 import './workers/broadcast.worker.js';
+import './workers/absenceNotification.worker.js';
 
 // ===== Fix for ESM =====
 const rootDir = path.join(import.meta.dirname, '..');
@@ -44,6 +52,8 @@ const app = express();
 
 const allowedOrigins = [
   'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:5175',
   process.env.FRONTEND_URL || 'https://care-craft.onrender.com',
 ];
 
@@ -55,7 +65,7 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        console.warn(`CORS blocked origin: ${origin}`); 
+        console.warn(`CORS blocked origin: ${origin}`);
         callback(new Error('Not allowed by CORS'));
       }
     },
@@ -86,24 +96,45 @@ app.use('/api/attribute-evaluation', attributeEvaluationRouter);
 app.use('/api/badge', badgeDefinitionRouter);
 app.use('/api/badgeCriteria', badgeCriteriaRouter);
 app.use('/api/studentBadge', studentBadgeRouter);
+app.use('/api/gift', giftRouter);
 app.use('/api/actionPlan', actionPlanRouter);
 app.use('/api/sharedPlanTemplate', sharedPlanTemplateRouter);
 app.use('/api/adminUser', adminUserRouter);
-app.use('/api/dashboard', dashboardRouter); 
+app.use('/api/dashboard', dashboardRouter);
 app.use('/api/calendar', academicCalendarRouter);
 app.use('/api/term', academicTermRouter);
 app.use('/api/assessment/conducted', conductedAssessmentRouter);
 app.use('/api/security', adminSecurityRouter);
 app.use('/api/broadcast', broadcastMessageRouter);
 app.use('/api/notifications', notificationRouter);
+app.use('/api/section', sectionRouter);
+app.use('/api/teaching-assignment', teachingAssignmentRouter);
+app.use('/api/attendance', attendanceRouter);
+app.use('/api/schedule', scheduleRouter);
 
 // ===== DB + Server Start =====
-connectDB().then(() => {
+connectDB().then(async () => {
   const port = Number(process.env.PORT) || 3000;
 
   app.listen(port, '0.0.0.0', () => {
     console.log(`Server running on port ${port}`);
   });
+
+  // Additively ensure the schedule indexes exist (never drops existing ones).
+  void ensureScheduleIndexes();
+
+  // Any generation jobs left queued/running belong to a previous process.
+  void recoverStaleGenerationJobs();
+
+  // The badge worker is intentionally started here, after MongoDB is ready.
+  try {
+    const { startBadgeEvaluationWorker } = await import(
+      './workers/badgeEvaluation.worker.js'
+    );
+    await startBadgeEvaluationWorker();
+  } catch (error) {
+    console.error('Failed to start badge evaluation worker:', error);
+  }
 });
 
 // ===== Background Tasks =====

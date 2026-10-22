@@ -1,8 +1,11 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { AttributeCategory } from '../models/attributeCategory.model.js';
-import { Observation } from '../models/observation.model.js';
 import { FlaggedIssue } from '../models/flaggedIssue.model.js';
+import { BadgeCriteria } from '../models/badgeCriteria.model.js';
+import { AttributeEvaluation } from '../models/attributeEvaluation.model.js';
+import { SharedPlanTemplate } from '../models/sharedPlanTemplate.model.js';
+import { guardDeleteReferences, type ReferenceCheck } from '../utils/referenceGuard.util.js';
 import { sendResponse } from '../utils/sendResponse.util.js';
 
 export const getAllAttributeCategories = async (req: Request, res: Response): Promise<void> => {
@@ -152,15 +155,14 @@ export const deleteAttributeCategory = async (req: Request, res: Response): Prom
       return;
     }
 
-    const observationCount = await Observation.countDocuments({ category: id });
-    const flaggedIssueCount = await FlaggedIssue.countDocuments({ linkedAttribute: id });
-    const dependencies = [];
-    if (observationCount > 0) dependencies.push(`${observationCount} observation(s)`);
-    if (flaggedIssueCount > 0) dependencies.push(`${flaggedIssueCount} flagged issue(s)`);
-    if (dependencies.length > 0) {
-      sendResponse(res, 400, false, `Cannot delete category; it is used by: ${dependencies.join(', ')}.`);
-      return;
-    }
+    const referenceChecks: ReferenceCheck[] = [
+      { model: FlaggedIssue, field: 'linkedAttribute', label: 'flagged issue(s)' },
+      { model: BadgeCriteria, field: 'attributeCategoryId', label: 'badge criterion(s)' },
+      { model: AttributeEvaluation, field: 'attributes.attributeId', label: 'attribute evaluation(s)' },
+      { model: SharedPlanTemplate, field: 'categoryId', label: 'shared plan template(s)' },
+    ];
+
+    if (await guardDeleteReferences(res, 'attribute category', id, referenceChecks)) return;
 
     await AttributeCategory.findByIdAndDelete(id);
     sendResponse(res, 200, true, 'Attribute category deleted successfully.');

@@ -15,8 +15,8 @@ const router = express.Router()
 
 router.get('/', authMiddleware,roleMiddleware('admin', 'coordinator'), getAllBroadcasts)
 
-router.get('/:id', authMiddleware, roleMiddleware('admin', 'coordinator'), getBroadcastById)
 router.get('/drafts', authMiddleware, roleMiddleware('admin'), getDraftBroadcasts)
+router.get('/:id', authMiddleware, roleMiddleware('admin', 'coordinator'), getBroadcastById)
 
 
 router.post('/', authMiddleware,roleMiddleware('admin'), createBroadcast)

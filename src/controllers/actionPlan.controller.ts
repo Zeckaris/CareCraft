@@ -1,31 +1,74 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import mongoose from 'mongoose';
 import { ActionPlan } from '../models/actionPlan.model.js';
 import { Student } from '../models/student.model.js';
-import  UserAccount  from '../models/userAccount.model.js';
-import { BadgeCriteria } from '../models/badgeCriteria.model.js';
+import UserAccount from '../models/userAccount.model.js';
 import { sendResponse } from '../utils/sendResponse.util.js'
+import { AuthRequest } from '../middlewares/auth.middleware.js';
+import {
+  resolveTeacherId,
+  assertTeacherCanWriteStudent,
+  assertTeacherCanReadStudent,
+  assertParentOwnsStudent,
+  getTeacherSectionIds,
+} from '../middlewares/access.middleware.js';
+import { StudentEnrollment } from '../models/studentEnrollment.model.js';
 
 
 const VALID_RESPONSIBLE_PARTIES = ['teacher', 'parent', 'either'] as const;
 
-export const getAllActionPlans = async (req: Request, res: Response): Promise<void> => {
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
+/** Build filter for student access based on role */
+async function buildStudentConstraint(req: AuthRequest): Promise<any> {
+  const user = req.user!
+  if (['admin', 'coordinator'].includes(user.role)) return {}
+
+  if (user.role === 'parent') {
+    const myStudent = await Student.findOne({ parentId: user.id }).select('_id').lean()
+    if (!myStudent) return { studentId: new mongoose.Types.ObjectId() } // no match
+    return { studentId: myStudent._id }
+  }
+
+  if (user.role === 'teacher') {
+    const sectionIds = await getTeacherSectionIds(user.id)
+    const enrollments = await StudentEnrollment.find({
+      sectionId: { $in: sectionIds },
+      isActive: true,
+    }).select('studentId').lean()
+    const studentIds = enrollments.map(e => e.studentId)
+    return { studentId: { $in: studentIds } }
+  }
+
+  return { studentId: new mongoose.Types.ObjectId() }
+}
+
+// ─── GET ALL ──────────────────────────────────────────────────────────────────
+
+export const getAllActionPlans = async (req: AuthRequest, res: Response): Promise<void> => {
   const { page = 1, limit = 10, teacherId, startDate, endDate } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
 
-  const filter: any = {};
-  if (teacherId) {
-    if (!mongoose.isValidObjectId(teacherId)) {
-      sendResponse(res, 400, false, 'Invalid teacherId');
-      return;
+  const constraint = await buildStudentConstraint(req);
+  const filter: any = { ...constraint };
+
+  // teacherId filter: only admin/coordinator may filter by a specific teacher
+  const user = req.user!
+  if (['admin', 'coordinator'].includes(user.role)) {
+    if (teacherId) {
+      if (!mongoose.isValidObjectId(teacherId)) {
+        sendResponse(res, 400, false, 'Invalid teacherId');
+        return;
+      }
+      const userDoc = await UserAccount.findById(teacherId);
+      if (!userDoc || !['admin', 'teacher'].includes(userDoc.role)) {
+        sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role');
+        return;
+      }
+      filter.teacherId = teacherId;
     }
-    const user = await UserAccount.findById(teacherId);
-    if (!user || !['admin', 'teacher'].includes(user.role)) {
-      sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role');
-      return;
-    }
-    filter.teacherId = teacherId;
   }
+
   if (startDate) {
     const date = new Date(startDate as string);
     if (isNaN(date.getTime())) {
@@ -63,7 +106,9 @@ export const getAllActionPlans = async (req: Request, res: Response): Promise<vo
   }
 };
 
-export const getActionPlansByStudent = async (req: Request, res: Response): Promise<void> => {
+// ─── GET BY STUDENT ───────────────────────────────────────────────────────────
+
+export const getActionPlansByStudent = async (req: AuthRequest, res: Response): Promise<void> => {
   const { studentId } = req.params;
   const { page = 1, limit = 10, startDate, endDate } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
@@ -72,31 +117,40 @@ export const getActionPlansByStudent = async (req: Request, res: Response): Prom
     sendResponse(res, 400, false, 'Invalid studentId');
     return;
   }
-  const student = await Student.findById(studentId);
-  if (!student) {
-    sendResponse(res, 404, false, 'Student not found');
-    return;
-  }
-
-  const filter: any = { studentId };
-  if (startDate) {
-    const date = new Date(startDate as string);
-    if (isNaN(date.getTime())) {
-      sendResponse(res, 400, false, 'Invalid startDate');
-      return;
-    }
-    filter.startDate = { $gte: date };
-  }
-  if (endDate) {
-    const date = new Date(endDate as string);
-    if (isNaN(date.getTime())) {
-      sendResponse(res, 400, false, 'Invalid endDate');
-      return;
-    }
-    filter.endDate = { $lte: date };
-  }
 
   try {
+    // Access check
+    const user = req.user!
+    if (user.role === 'parent') {
+      await assertParentOwnsStudent(user.id, studentId)
+    } else if (user.role === 'teacher') {
+      await assertTeacherCanReadStudent(user.id, studentId)
+    }
+
+    const student = await Student.findById(studentId);
+    if (!student) {
+      sendResponse(res, 404, false, 'Student not found');
+      return;
+    }
+
+    const filter: any = { studentId };
+    if (startDate) {
+      const date = new Date(startDate as string);
+      if (isNaN(date.getTime())) {
+        sendResponse(res, 400, false, 'Invalid startDate');
+        return;
+      }
+      filter.startDate = { $gte: date };
+    }
+    if (endDate) {
+      const date = new Date(endDate as string);
+      if (isNaN(date.getTime())) {
+        sendResponse(res, 400, false, 'Invalid endDate');
+        return;
+      }
+      filter.endDate = { $lte: date };
+    }
+
     const plans = await ActionPlan.find(filter)
       .populate('studentId', 'firstName lastName')
       .populate('teacherId', 'firstName lastName email role')
@@ -111,12 +165,14 @@ export const getActionPlansByStudent = async (req: Request, res: Response): Prom
       page: Number(page),
       limit: Number(limit)
     });
-  } catch (error) {
-    sendResponse(res, 500, false, `Server error fetching action plans: ${(error as Error).message}`, null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || `Server error fetching action plans`, null, error);
   }
 };
 
-export const getActionPlansByTeacher = async (req: Request, res: Response): Promise<void> => {
+// ─── GET BY TEACHER ───────────────────────────────────────────────────────────
+
+export const getActionPlansByTeacher = async (req: AuthRequest, res: Response): Promise<void> => {
   const { teacherId } = req.params;
   const { page = 1, limit = 10, studentId } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
@@ -125,8 +181,16 @@ export const getActionPlansByTeacher = async (req: Request, res: Response): Prom
     sendResponse(res, 400, false, 'Invalid teacherId');
     return;
   }
-  const user = await UserAccount.findById(teacherId);
-  if (!user || !['admin', 'teacher'].includes(user.role)) {
+
+  // Teachers may only query their own plans
+  const user = req.user!
+  if (user.role === 'teacher' && teacherId !== user.id.toString()) {
+    sendResponse(res, 403, false, 'Forbidden: You can only view your own action plans');
+    return;
+  }
+
+  const userDoc = await UserAccount.findById(teacherId);
+  if (!userDoc || !['admin', 'teacher'].includes(userDoc.role)) {
     sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role');
     return;
   }
@@ -165,7 +229,9 @@ export const getActionPlansByTeacher = async (req: Request, res: Response): Prom
   }
 };
 
-export const getActionPlanById = async (req: Request, res: Response): Promise<void> => {
+// ─── GET BY ID ────────────────────────────────────────────────────────────────
+
+export const getActionPlanById = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
@@ -182,28 +248,37 @@ export const getActionPlanById = async (req: Request, res: Response): Promise<vo
       sendResponse(res, 404, false, 'ActionPlan not found');
       return;
     }
+
+    const user = req.user!
+    const studentId = (plan.studentId as any)?._id || plan.studentId
+    if (user.role === 'parent') {
+      await assertParentOwnsStudent(user.id, studentId)
+    } else if (user.role === 'teacher') {
+      await assertTeacherCanReadStudent(user.id, studentId)
+    }
+
     sendResponse(res, 200, true, 'Action plan fetched successfully', plan);
-  } catch (error) {
-    sendResponse(res, 500, false, `Server error fetching action plan: ${(error as Error).message}`, null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || `Server error fetching action plan`, null, error);
   }
 };
 
-export const createActionPlan = async (req: Request, res: Response): Promise<void> => {
-  const { studentId, teacherId, issue, goal, actionSteps, startDate, endDate } = req.body;
+// ─── CREATE ───────────────────────────────────────────────────────────────────
+
+export const createActionPlan = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { studentId, issue, goal, actionSteps, startDate, endDate } = req.body;
+
+  // teacherId always from the logged-in user (admin/coordinator may pass override)
+  const effectiveTeacherId = resolveTeacherId(req);
 
   // Validate required fields
-  if (!studentId || !teacherId || !issue || !goal || !actionSteps || !Array.isArray(actionSteps) || actionSteps.length === 0 || !startDate || !endDate) {
-    sendResponse(res, 400, false, 'Missing required fields: studentId, teacherId, issue, goal, actionSteps (non-empty array), startDate, or endDate');
+  if (!studentId || !issue || !goal || !actionSteps || !Array.isArray(actionSteps) || actionSteps.length === 0 || !startDate || !endDate) {
+    sendResponse(res, 400, false, 'Missing required fields: studentId, issue, goal, actionSteps (non-empty array), startDate, or endDate');
     return;
   }
 
-  // Validate IDs
   if (!mongoose.isValidObjectId(studentId)) {
     sendResponse(res, 400, false, 'Invalid studentId');
-    return;
-  }
-  if (!mongoose.isValidObjectId(teacherId)) {
-    sendResponse(res, 400, false, 'Invalid teacherId');
     return;
   }
 
@@ -217,10 +292,10 @@ export const createActionPlan = async (req: Request, res: Response): Promise<voi
     return;
   }
 
-  if (!actionSteps.every((item: any) => 
-    item && 
-    typeof item.step === 'string' && 
-    item.step.trim().length >= 5 && 
+  if (!actionSteps.every((item: any) =>
+    item &&
+    typeof item.step === 'string' &&
+    item.step.trim().length >= 5 &&
     item.step.trim().length <= 500 &&
     (item.completed === undefined || typeof item.completed === 'boolean') &&
     (item.responsibleParty === undefined || VALID_RESPONSIBLE_PARTIES.includes(item.responsibleParty))
@@ -254,14 +329,20 @@ export const createActionPlan = async (req: Request, res: Response): Promise<voi
   }
 
   try {
+    // Access guard: homeroom teacher only
+    const user = req.user!
+    if (user.role === 'teacher') {
+      await assertTeacherCanWriteStudent(effectiveTeacherId, studentId)
+    }
+
     // Validate references
     const student = await Student.findById(studentId);
     if (!student) {
       sendResponse(res, 404, false, 'Student not found');
       return;
     }
-    const user = await UserAccount.findById(teacherId);
-    if (!user || !['admin', 'teacher'].includes(user.role)) {
+    const userDoc = await UserAccount.findById(effectiveTeacherId);
+    if (!userDoc || !['admin', 'teacher'].includes(userDoc.role)) {
       sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role (admin, teacher)');
       return;
     }
@@ -275,13 +356,13 @@ export const createActionPlan = async (req: Request, res: Response): Promise<voi
 
     const actionPlan = await ActionPlan.create({
       studentId,
-      teacherId,
+      teacherId: effectiveTeacherId,
       issue: issue.trim(),
       goal: goal.trim(),
       actionSteps: actionSteps.map((item: any) => ({
         step: item.step.trim(),
         completed: item.completed ?? false,
-        responsibleParty: item.responsibleParty ?? 'teacher'  // Uses model default if not provided
+        responsibleParty: item.responsibleParty ?? 'teacher'
       })),
       startDate: start,
       endDate: end
@@ -292,20 +373,22 @@ export const createActionPlan = async (req: Request, res: Response): Promise<voi
       .populate('teacherId', 'firstName lastName email role')
       .lean({ virtuals: true });
     sendResponse(res, 201, true, 'Action plan created successfully', populated);
-  } catch (error) {
-    sendResponse(res, 500, false, `Server error creating action plan: ${(error as Error).message}`, null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || `Server error creating action plan`, null, error);
   }
 };
 
-export const updateActionPlan = async (req: Request, res: Response): Promise<void> => {
+// ─── UPDATE ───────────────────────────────────────────────────────────────────
+
+export const updateActionPlan = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { studentId, teacherId, issue, goal, actionSteps, startDate, endDate } = req.body;
+  const { studentId, issue, goal, actionSteps, startDate, endDate } = req.body;
 
   if (!mongoose.isValidObjectId(id)) {
     sendResponse(res, 400, false, 'Invalid action plan ID');
     return;
   }
-  if (!studentId && !teacherId && !issue && !goal && !actionSteps && !startDate && !endDate) {
+  if (!studentId && !issue && !goal && !actionSteps && !startDate && !endDate) {
     sendResponse(res, 400, false, 'At least one field required for update');
     return;
   }
@@ -315,6 +398,12 @@ export const updateActionPlan = async (req: Request, res: Response): Promise<voi
     if (!actionPlan) {
       sendResponse(res, 404, false, 'ActionPlan not found');
       return;
+    }
+
+    // Access guard: homeroom teacher only; subject teachers cannot update action plans
+    const user = req.user!
+    if (user.role === 'teacher') {
+      await assertTeacherCanWriteStudent(user.id, actionPlan.studentId.toString())
     }
 
     // Validate inputs if provided
@@ -329,17 +418,6 @@ export const updateActionPlan = async (req: Request, res: Response): Promise<voi
         return;
       }
     }
-    if (teacherId) {
-      if (!mongoose.isValidObjectId(teacherId)) {
-        sendResponse(res, 400, false, 'Invalid teacherId');
-        return;
-      }
-      const user = await UserAccount.findById(teacherId);
-      if (!user || !['admin', 'teacher'].includes(user.role)) {
-        sendResponse(res, 400, false, 'Invalid teacherId: User does not exist or lacks required role');
-        return;
-      }
-    }
     if (issue && (typeof issue !== 'string' || issue.trim().length < 5 || issue.trim().length > 500)) {
       sendResponse(res, 400, false, 'Invalid issue: Must be 5–500 characters');
       return;
@@ -349,16 +427,15 @@ export const updateActionPlan = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    // Updated actionSteps validation with responsibleParty
     if (actionSteps) {
       if (!Array.isArray(actionSteps) || actionSteps.length === 0) {
         sendResponse(res, 400, false, 'actionSteps must be a non-empty array');
         return;
       }
-      if (!actionSteps.every((item: any) => 
-        item && 
-        typeof item.step === 'string' && 
-        item.step.trim().length >= 5 && 
+      if (!actionSteps.every((item: any) =>
+        item &&
+        typeof item.step === 'string' &&
+        item.step.trim().length >= 5 &&
         item.step.trim().length <= 500 &&
         (item.completed === undefined || typeof item.completed === 'boolean') &&
         (item.responsibleParty === undefined || VALID_RESPONSIBLE_PARTIES.includes(item.responsibleParty))
@@ -406,7 +483,7 @@ export const updateActionPlan = async (req: Request, res: Response): Promise<voi
     }
 
     // Check duplicate issue if changing student or issue
-    if ((studentId && studentId.toString() !== actionPlan.studentId.toString()) || 
+    if ((studentId && studentId.toString() !== actionPlan.studentId.toString()) ||
         (issue && issue.trim() !== actionPlan.issue)) {
       const existingPlan = await ActionPlan.findOne({
         studentId: studentId || actionPlan.studentId,
@@ -418,9 +495,8 @@ export const updateActionPlan = async (req: Request, res: Response): Promise<voi
       }
     }
 
-    // Apply updates
+    // Apply updates (teacherId is never updated via body — only admin/coordinator can have entered on behalf)
     if (studentId) actionPlan.studentId = studentId;
-    if (teacherId) actionPlan.teacherId = teacherId;
     if (issue) actionPlan.issue = issue.trim();
     if (goal) actionPlan.goal = goal.trim();
     if (actionSteps) {
@@ -439,16 +515,18 @@ export const updateActionPlan = async (req: Request, res: Response): Promise<voi
       .populate('studentId', 'firstName lastName')
       .populate('teacherId', 'firstName lastName email role')
       .lean({ virtuals: true });
-    
+
     sendResponse(res, 200, true, 'Action plan updated successfully', updated);
-  } catch (error) {
-    sendResponse(res, 500, false, `Server error updating action plan: ${(error as Error).message}`, null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || `Server error updating action plan`, null, error);
   }
 };
 
-export const updateActionPlanStep = async (req: Request, res: Response): Promise<void> => {
+// ─── UPDATE STEP ──────────────────────────────────────────────────────────────
+
+export const updateActionPlanStep = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id, stepIndex } = req.params;
-  const { step, completed, responsibleParty } = req.body;  // Added responsibleParty
+  const { step, completed, responsibleParty } = req.body;
 
   if (!mongoose.isValidObjectId(id)) {
     sendResponse(res, 400, false, 'Invalid action plan ID');
@@ -483,6 +561,13 @@ export const updateActionPlanStep = async (req: Request, res: Response): Promise
       sendResponse(res, 404, false, 'ActionPlan not found');
       return;
     }
+
+    // Access guard: homeroom teacher only
+    const user = req.user!
+    if (user.role === 'teacher') {
+      await assertTeacherCanWriteStudent(user.id, actionPlan.studentId.toString())
+    }
+
     if (index >= actionPlan.actionSteps.length) {
       sendResponse(res, 400, false, 'Invalid stepIndex: Out of range for actionSteps array');
       return;
@@ -505,12 +590,14 @@ export const updateActionPlanStep = async (req: Request, res: Response): Promise
       .populate('teacherId', 'firstName lastName email role')
       .lean({ virtuals: true });
     sendResponse(res, 200, true, 'Action plan step updated successfully', updated);
-  } catch (error) {
-    sendResponse(res, 500, false, `Server error updating action plan step: ${(error as Error).message}`, null, error);
+  } catch (error: any) {
+    sendResponse(res, error.statusCode || 500, false, error.message || `Server error updating action plan step`, null, error);
   }
 };
 
-export const deleteActionPlan = async (req: Request, res: Response): Promise<void> => {
+// ─── DELETE ───────────────────────────────────────────────────────────────────
+
+export const deleteActionPlan = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
 
   if (!mongoose.isValidObjectId(id)) {
@@ -522,13 +609,6 @@ export const deleteActionPlan = async (req: Request, res: Response): Promise<voi
     const actionPlan = await ActionPlan.findById(id);
     if (!actionPlan) {
       sendResponse(res, 404, false, 'ActionPlan not found');
-      return;
-    }
-
-    // Check if linked to BadgeCriteria
-    const dependentCriteria = await BadgeCriteria.findOne({ actionPlanId: id });
-    if (dependentCriteria) {
-      sendResponse(res, 400, false, 'Cannot delete action plan: It is linked to badge criteria');
       return;
     }
 

@@ -3,6 +3,12 @@ import { Grade } from '../../models/grade.model.js'
 import { sendResponse } from '../../utils/sendResponse.util.js'
 import { Types } from "mongoose"
 import { StudentEnrollment } from '../../models/studentEnrollment.model.js'
+import { Section } from '../../models/section.model.js'
+import { GradeSubjectAssessment } from '../../models/gradeSubjectAssessment.model.js'
+import { BadgeDefinition } from '../../models/badgeDefinition.model.js'
+import { ScheduleEntry } from '../../models/scheduleEntry.model.js'
+import { WeeklyPeriodRequirement } from '../../models/weeklyPeriodRequirement.model.js'
+import { guardDeleteReferences, ReferenceCheck } from '../../utils/referenceGuard.util.js'
 
 
 export const createGrade= async (req:Request, res:Response):Promise<void> =>{
@@ -105,33 +111,60 @@ export const updateGrade = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
-export const deleteGrade= async (req:Request, res:Response):Promise<void> =>{
-    const {id}= req.params
-    if (!id){
-        sendResponse(res, 400, false, "Missing required field")
-        return
+export const deleteGrade = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params
+  if (!id || !Types.ObjectId.isValid(id)) {
+    sendResponse(res, 400, false, 'Valid grade ID required')
+    return
+  }
+
+  try {
+    const grade = await Grade.findById(id)
+    if (!grade) {
+      sendResponse(res, 404, false, 'Grade not found')
+      return
     }
 
-    try{
-        const grade= await Grade.findByIdAndDelete(id)
-        if (!grade){
-            sendResponse(res, 404, false, "Grade not found")
-            return
-        }
-        const enrollmentCount = await StudentEnrollment.countDocuments({ gradeId: id });
-        if (enrollmentCount > 0) {
-        sendResponse(
-            res,
-            400,
-            false,
-            `Cannot delete "${grade.level}" — ${enrollmentCount} enrollment(s) linked. Remove them first.`
-        );
-        return;
-        }
-        sendResponse(res, 200, true, "Grade deleted successfully")
-        return
-    }catch(error){
-        sendResponse(res, 500, false, "Internal server error", null, error)
-        return      
-    }
+    const referenceChecks: ReferenceCheck[] = [
+      {
+        model: StudentEnrollment,
+        field: 'gradeId',
+        filter: { isActive: true },
+        label: 'active enrollment(s)',
+      },
+      {
+        model: StudentEnrollment,
+        field: 'gradeId',
+        filter: { isActive: false },
+        label: 'inactive enrollment(s)',
+      },
+      { model: Section, field: 'gradeId', label: 'section(s)' },
+      {
+        model: GradeSubjectAssessment,
+        field: 'gradeId',
+        label: 'grade-subject assessment(s)',
+      },
+      { model: BadgeDefinition, field: 'eligibleGrades', label: 'badge definition(s)' },
+      {
+        model: ScheduleEntry,
+        field: 'gradeId',
+        label: 'schedule entry(ies)',
+        excludeArchivedSchedules: true,
+      },
+      {
+        model: WeeklyPeriodRequirement,
+        field: 'gradeId',
+        label: 'weekly period requirement(s)',
+      },
+    ]
+
+    if (await guardDeleteReferences(res, 'grade', id, referenceChecks)) return
+
+    await Grade.findByIdAndDelete(id)
+    sendResponse(res, 200, true, 'Grade deleted successfully')
+    return
+  } catch (error) {
+    sendResponse(res, 500, false, 'Internal server error', null, error)
+    return
+  }
 }
