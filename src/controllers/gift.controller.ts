@@ -3,6 +3,7 @@ import mongoose from 'mongoose'
 import { Gift } from '../models/gift.model.js'
 import { BadgeDefinition } from '../models/badgeDefinition.model.js'
 import { StudentBadge } from '../models/studentBadge.model.js'
+import { guardDeleteReferences, type ReferenceCheck } from '../utils/referenceGuard.util.js'
 import { sendResponse } from '../utils/sendResponse.util.js'
 import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.util.js'
 
@@ -432,23 +433,12 @@ export const deleteGift = async (
       return
     }
 
-    const [badgeCount, awardCount] = await Promise.all([
-      BadgeDefinition.countDocuments({ giftId: id }),
-      StudentBadge.countDocuments({ giftId: id }),
-    ])
+    const referenceChecks: ReferenceCheck[] = [
+      { model: BadgeDefinition, field: 'giftId', label: 'badge definition(s)' },
+      { model: StudentBadge, field: 'giftId', label: 'student badge(s)' },
+    ]
 
-    const dependencies: string[] = []
-    if (badgeCount > 0) dependencies.push(`${badgeCount} badge definition(s)`)
-    if (awardCount > 0) dependencies.push(`${awardCount} student badge award(s)`)
-    if (dependencies.length > 0) {
-      sendResponse(
-        res,
-        400,
-        false,
-        `Cannot delete gift; it is used by: ${dependencies.join(', ')}`
-      )
-      return
-    }
+    if (await guardDeleteReferences(res, 'gift', id, referenceChecks)) return
 
     deleteGiftImage(gift.image)
 

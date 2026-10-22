@@ -2,6 +2,7 @@ import { Request, Response } from "express"
 import { AssessmentSetup } from '../../models/assessment/assessmentSetup.model.js'
 import { AssessmentType } from '../../models/assessment/assessmentType.model.js'
 import { GradeSubjectAssessment } from '../../models/gradeSubjectAssessment.model.js'
+import { guardDeleteReferences, type ReferenceCheck } from '../../utils/referenceGuard.util.js'
 import { sendResponse } from '../../utils/sendResponse.util.js'
 import { recalcMarksheetsForSetups } from '../../service/assessmentScore.service.js'
 
@@ -164,26 +165,23 @@ export const deleteAssessmentSetup = async (req: Request, res: Response): Promis
   }
 
   try {
-    // Marksheets no longer store a setup id; a setup is referenced only via GSA.
-    const usedInGSA = await GradeSubjectAssessment.findOne({ assessmentSetupId: id });
-
-    if (usedInGSA) {
-      const gsaCount = await GradeSubjectAssessment.countDocuments({ assessmentSetupId: id });
-
-      sendResponse(res, 400, false, `Cannot delete assessment setup: still referenced by ${gsaCount} grade subject assessment(s). Remove those records first.`, {
-        references: {
-          gradeSubjectAssessmentId: usedInGSA?._id || null,
-        }
-      });
-      return;
-    }
-
-    const deletedSetup = await AssessmentSetup.findByIdAndDelete(id);
-    if (!deletedSetup) {
+    const setup = await AssessmentSetup.findById(id);
+    if (!setup) {
       sendResponse(res, 404, false, "Assessment setup not found");
       return;
     }
 
+    const referenceChecks: ReferenceCheck[] = [
+      {
+        model: GradeSubjectAssessment,
+        field: 'assessmentSetupId',
+        label: 'grade-subject assessment(s)',
+      },
+    ];
+
+    if (await guardDeleteReferences(res, 'assessment setup', id, referenceChecks)) return;
+
+    await AssessmentSetup.findByIdAndDelete(id);
     sendResponse(res, 200, true, "Assessment setup deleted successfully");
   } catch (error) {
     sendResponse(res, 500, false, "Internal server error", null, error);

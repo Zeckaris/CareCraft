@@ -6,6 +6,9 @@ import { StudentBadge } from '../models/studentBadge.model.js'
 import { AttributeCategory } from '../models/attributeCategory.model.js'
 import { Grade } from '../models/grade.model.js'
 import { Gift } from '../models/gift.model.js'
+import { BadgeAwardSuppression } from '../models/badgeAwardSuppression.model.js'
+import { Notification } from '../models/notification.model.js'
+import { guardDeleteReferences, type ReferenceCheck } from '../utils/referenceGuard.util.js'
 import { sendResponse } from '../utils/sendResponse.util.js'
 import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.util.js'
 import { AUTOMATIC_CRITERIA_TYPES } from '../badges/criteriaRegistry.js'
@@ -784,22 +787,17 @@ export const deleteBadgeDefinition = async (
       return
     }
 
-    const studentBadgeCount = await StudentBadge.countDocuments({ badgeId: id })
-    const criteriaCount = await BadgeCriteria.countDocuments({
-      badgeDefinitionId: id,
-    })
-    const dependencies: string[] = []
-    if (studentBadgeCount > 0) dependencies.push(`${studentBadgeCount} student badge(s)`)
-    if (criteriaCount > 0) dependencies.push(`${criteriaCount} badge criteria`)
-    if (dependencies.length > 0) {
-      sendResponse(
-        res,
-        400,
-        false,
-        `Cannot delete badge definition; it is used by: ${dependencies.join(', ')}`
-      )
-      return
-    }
+    const referenceChecks: ReferenceCheck[] = [
+      { model: StudentBadge, field: 'badgeId', label: 'student badge(s)' },
+      { model: BadgeCriteria, field: 'badgeDefinitionId', label: 'badge criterion(s)' },
+    ]
+
+    if (await guardDeleteReferences(res, 'badge definition', id, referenceChecks)) return
+
+    await Promise.all([
+      BadgeAwardSuppression.deleteMany({ badgeId: id }),
+      Notification.deleteMany({ badgeId: id }),
+    ])
 
     deleteIcon(badge.icon, 'badge')
 

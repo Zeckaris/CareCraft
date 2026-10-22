@@ -5,6 +5,7 @@ import { AssessmentSetup } from '../../models/assessment/assessmentSetup.model.j
 import { AssessmentScore } from '../../models/assessment/assessmentScore.model.js'
 import { ConductedAssessment } from '../../models/ConductedAssessment.model.js'
 import { recalcMarksheetsForAssessmentType } from '../../service/assessmentScore.service.js'
+import { guardDeleteReferences, type ReferenceCheck } from '../../utils/referenceGuard.util.js'
 import { sendResponse } from '../../utils/sendResponse.util.js';
 
 export const createAssessmentType = async (req: Request, res: Response): Promise<void> => {
@@ -154,45 +155,33 @@ export const deleteAssessmentType = async (req: Request, res: Response): Promise
   }
 
   try {
-    // Correct field name for AssessmentSetup
-    const usedInSetup = await AssessmentSetup.findOne({ assessmentTypeIds: id })
-    const usedInConducted = await ConductedAssessment.findOne({
-      $or: [{ conductedStages: id }, { lockedStages: id }],
-    })
-    const usedInScore = await AssessmentScore.findOne({ 'scores.assessmentTypeId': id })
-
-    if (usedInSetup || usedInConducted || usedInScore) {
-      const setupCount = usedInSetup ? await AssessmentSetup.countDocuments({ assessmentTypeIds: id }) : 0
-      const conductedCount = usedInConducted
-        ? await ConductedAssessment.countDocuments({
-            $or: [{ conductedStages: id }, { lockedStages: id }],
-          })
-        : 0
-      const scoreCount = usedInScore
-        ? await AssessmentScore.countDocuments({ 'scores.assessmentTypeId': id })
-        : 0
-
-      const blockers: string[] = []
-      if (setupCount > 0) blockers.push(`${setupCount} assessment setup(s)`)
-      if (conductedCount > 0) blockers.push(`${conductedCount} conducted assessment(s)`)
-      if (scoreCount > 0) blockers.push(`${scoreCount} marksheet(s)`)
-
-      sendResponse(res, 400, false, `Cannot delete assessment type: still referenced by ${blockers.join(", ")}. Remove those records first.`, {
-        references: {
-          setupId: usedInSetup?._id || null,
-          conductedAssessmentId: usedInConducted?._id || null,
-          assessmentScoreId: usedInScore?._id || null,
-        }
-      })
-      return
-    }
-
-    const deletedType = await AssessmentType.findByIdAndDelete(id)
-    if (!deletedType) {
+    const assessmentType = await AssessmentType.findById(id)
+    if (!assessmentType) {
       sendResponse(res, 404, false, "Assessment type not found")
       return
     }
 
+    const referenceChecks: ReferenceCheck[] = [
+      {
+        model: AssessmentSetup,
+        field: 'assessmentTypeIds',
+        label: 'assessment setup(s)',
+      },
+      {
+        model: ConductedAssessment,
+        field: ['conductedStages', 'lockedStages'],
+        label: 'conducted assessment(s)',
+      },
+      {
+        model: AssessmentScore,
+        field: 'scores.assessmentTypeId',
+        label: 'assessment score(s)',
+      },
+    ]
+
+    if (await guardDeleteReferences(res, 'assessment type', id, referenceChecks)) return
+
+    await AssessmentType.findByIdAndDelete(id)
     sendResponse(res, 200, true, "Assessment type deleted successfully")
   } catch (error) {
     sendResponse(res, 500, false, "Internal server error", null, error)
