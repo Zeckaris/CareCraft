@@ -14,6 +14,7 @@ import { Subject } from '../models/subject.model.js'
 import { TeachingAssignment } from '../models/teachingAssignment.model.js'
 import UserAccount from '../models/userAccount.model.js'
 import { getCurrentAcademicSnapshot } from './currentAcademic.service.js'
+import { classPerformanceBasePipeline } from './lockedStagePerformance.service.js'
 import { loadSchoolDayContext } from './schoolDay.service.js'
 import { addDaysSchoolDate, toSchoolDateString } from '../utils/schoolDate.util.js'
 import { getYearVariants, normalizeYear } from '../utils/yearNormalizer.js'
@@ -685,136 +686,6 @@ export async function getChronicAbsentees() {
       absentees: buildEntries(previousDatesByStudent),
     },
   }
-}
-
-function classPerformanceBasePipeline(termId: any, sectionIds: any[]): any[] {
-  return [
-    { $match: { academicTermId: termId, sectionId: { $in: sectionIds } } },
-    {
-      $lookup: {
-        from: ConductedAssessment.collection.name,
-        let: { gsaId: '$gsaId', sectionId: '$sectionId', termId: '$academicTermId' },
-        pipeline: [
-          {
-            $match: {
-              $expr: {
-                $and: [
-                  { $eq: ['$gsaId', '$$gsaId'] },
-                  { $eq: ['$sectionId', '$$sectionId'] },
-                  { $eq: ['$academicTermId', '$$termId'] },
-                ],
-              },
-            },
-          },
-        ],
-        as: 'conducted',
-      },
-    },
-    { $unwind: '$conducted' },
-    {
-      $lookup: {
-        from: GradeSubjectAssessment.collection.name,
-        localField: 'gsaId',
-        foreignField: '_id',
-        as: 'gsa',
-      },
-    },
-    { $unwind: '$gsa' },
-    {
-      $lookup: {
-        from: AssessmentSetup.collection.name,
-        localField: 'gsa.assessmentSetupId',
-        foreignField: '_id',
-        as: 'setup',
-      },
-    },
-    { $unwind: '$setup' },
-    {
-      $lookup: {
-        from: AssessmentType.collection.name,
-        localField: 'setup.assessmentTypeIds',
-        foreignField: '_id',
-        as: 'setupTypes',
-      },
-    },
-    {
-      $addFields: {
-        lockedTypes: {
-          $filter: {
-            input: '$setupTypes',
-            as: 'type',
-            cond: {
-              $in: ['$$type._id', { $ifNull: ['$conducted.lockedStages', []] }],
-            },
-          },
-        },
-      },
-    },
-    {
-      $addFields: {
-        lockedTypeIds: {
-          $map: {
-            input: '$lockedTypes',
-            as: 'type',
-            in: '$$type._id',
-          },
-        },
-      },
-    },
-    {
-      $project: {
-        sectionId: 1,
-        studentId: 1,
-        gsaId: 1,
-        subjectId: '$gsa.subjectId',
-        lockedStageCount: { $size: '$lockedTypes' },
-        lockedWeight: {
-          $sum: {
-            $map: {
-              input: '$lockedTypes',
-              as: 'type',
-              in: { $ifNull: ['$$type.weight', 0] },
-            },
-          },
-        },
-        lockedScore: {
-          $sum: {
-            $map: {
-              input: {
-                $filter: {
-                  input: '$scores',
-                  as: 'score',
-                  cond: { $in: ['$$score.assessmentTypeId', '$lockedTypeIds'] },
-                },
-              },
-              as: 'score',
-              in: { $ifNull: ['$$score.score', 0] },
-            },
-          },
-        },
-        lockedTypeIds: 1,
-      },
-    },
-    {
-      $match: {
-        lockedStageCount: { $gt: 0 },
-        lockedWeight: { $gt: 0 },
-      },
-    },
-    {
-      $project: {
-        sectionId: 1,
-        studentId: 1,
-        gsaId: 1,
-        subjectId: 1,
-        lockedStageCount: 1,
-        lockedTypeIds: 1,
-        subjectAverage: {
-          $multiply: [{ $divide: ['$lockedScore', '$lockedWeight'] }, 100],
-        },
-      },
-    },
-  ]
 }
 
 export async function getClassPerformance() {
