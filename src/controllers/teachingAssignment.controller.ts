@@ -5,6 +5,8 @@ import { Section } from '../models/section.model.js'
 import { GradeSubjectAssessment } from '../models/gradeSubjectAssessment.model.js'
 import UserAccount from '../models/userAccount.model.js'
 import { Subject } from '../models/subject.model.js'
+import { ScheduleEntry } from '../models/scheduleEntry.model.js'
+import { guardDeleteReferences, ReferenceCheck } from '../utils/referenceGuard.util.js'
 import { sendResponse } from '../utils/sendResponse.util.js'
 import { getYearVariants, normalizeYear } from '../utils/yearNormalizer.js'
 
@@ -266,8 +268,21 @@ export const deleteTeachingAssignment = async (req: Request, res: Response): Pro
   if (!mongoose.isValidObjectId(id)) { sendResponse(res, 400, false, 'Invalid ID'); return }
 
   try {
-    const assignment = await TeachingAssignment.findByIdAndDelete(id)
+    const assignment = await TeachingAssignment.findById(id)
     if (!assignment) { sendResponse(res, 404, false, 'Teaching assignment not found'); return }
+
+    const referenceChecks: ReferenceCheck[] = [
+      {
+        model: ScheduleEntry,
+        field: 'teachingAssignmentId',
+        label: 'schedule entry(ies)',
+        excludeArchivedSchedules: true,
+      },
+    ]
+
+    if (await guardDeleteReferences(res, 'teaching assignment', id, referenceChecks)) return
+
+    await TeachingAssignment.findByIdAndDelete(id)
     sendResponse(res, 200, true, 'Teaching assignment deleted successfully')
   } catch (error) {
     sendResponse(res, 500, false, 'Server error deleting teaching assignment', null, error)

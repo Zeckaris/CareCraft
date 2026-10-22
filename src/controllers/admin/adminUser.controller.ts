@@ -3,6 +3,14 @@ import UserAccount from '../../models/userAccount.model.js';
 import { TeachingAssignment } from '../../models/teachingAssignment.model.js';
 import { AttributeEvaluation } from '../../models/attributeEvaluation.model.js';
 import { Observation } from '../../models/observation.model.js';
+import { ScheduleEntry } from '../../models/scheduleEntry.model.js';
+import { ActionPlan } from '../../models/actionPlan.model.js';
+import { Report } from '../../models/report.model.js';
+import { ChatRoom } from '../../models/chatRoom.model.js';
+import { FlaggedIssue } from '../../models/flaggedIssue.model.js';
+import { Notification } from '../../models/notification.model.js';
+import { Student } from '../../models/student.model.js';
+import { guardDeleteReferences, ReferenceCheck } from '../../utils/referenceGuard.util.js';
 import { sendResponse } from '../../utils/sendResponse.util.js';
 import { IUserAccount } from '../../types/userAccount.type.js';
 
@@ -188,40 +196,38 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // === BLOCK TEACHER DELETION WHILE ASSIGNMENTS REFERENCE THEM ===
+    // === BLOCK DELETION WHILE ACADEMIC OR HISTORICAL RECORDS REFERENCE THE USER ===
+    const referenceChecks: ReferenceCheck[] = [];
+
     if (role === 'teacher') {
-      const taCount = await TeachingAssignment.countDocuments({ teacherId: id });
-      if (taCount > 0) {
-        return sendResponse(
-          res,
-          400,
-          false,
-          `Cannot delete teacher: ${taCount} teaching assignment(s) reference them. Remove those first.`
-        );
-      }
+      referenceChecks.push(
+        { model: TeachingAssignment, field: 'teacherId', label: 'teaching assignment(s)' },
+        {
+          model: ScheduleEntry,
+          field: 'teacherId',
+          label: 'schedule entry(ies)',
+          excludeArchivedSchedules: true,
+        },
+        { model: ActionPlan, field: 'teacherId', label: 'action plan(s)' },
+        { model: Report, field: 'teacherId', label: 'report(s)' },
+        { model: ChatRoom, field: 'teacherId', label: 'chat room(s)' },
+        { model: FlaggedIssue, field: 'teacherId', label: 'flagged issue(s)' },
+        { model: AttributeEvaluation, field: 'teacherId', label: 'attribute evaluation(s)' },
+        { model: Observation, field: 'teacherId', label: 'observation(s)' }
+      );
+    } else if (role === 'parent') {
+      referenceChecks.push(
+        { model: Student, field: 'parentId', label: 'linked student(s)' },
+        { model: ChatRoom, field: 'parentId', label: 'chat room(s)' }
+      );
+    }
 
-      const aeCount = await AttributeEvaluation.countDocuments({ teacherId: id });
-      if (aeCount > 0) {
-        return sendResponse(
-          res,
-          400,
-          false,
-          `Cannot delete teacher: ${aeCount} attribute evaluation(s) reference them. Remove those first.`
-        );
-      }
-
-      const observationCount = await Observation.countDocuments({ teacherId: id });
-      if (observationCount > 0) {
-        return sendResponse(
-          res,
-          400,
-          false,
-          `Cannot delete teacher: ${observationCount} observation(s) reference them. Remove those first.`
-        );
-      }
+    if (await guardDeleteReferences(res, role, id, referenceChecks, { person: true })) {
+      return;
     }
 
     // === SAFE TO DELETE ===
+    await Notification.deleteMany({ userId: id });
     await UserAccount.findByIdAndDelete(id);
     sendResponse(res, 200, true, 'User deleted successfully.');
 

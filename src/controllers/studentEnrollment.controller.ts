@@ -4,6 +4,9 @@ import { StudentEnrollment } from '../models/studentEnrollment.model.js';
 import { Student } from '../models/student.model.js';
 import { Section } from '../models/section.model.js';
 import { Grade } from '../models/grade.model.js';
+import { Attendance } from '../models/attendance.model.js';
+import { AttributeEvaluation } from '../models/attributeEvaluation.model.js';
+import { guardDeleteReferences, ReferenceCheck } from '../utils/referenceGuard.util.js';
 import { sendResponse } from '../utils/sendResponse.util.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import {
@@ -542,7 +545,16 @@ export const deleteEnrollment = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    await Student.findByIdAndUpdate(enrollment.studentId, { enrollmentId: null });
+    const referenceChecks: ReferenceCheck[] = [
+      { model: Attendance, field: 'enrollmentId', label: 'attendance record(s)' },
+      { model: AttributeEvaluation, field: 'studentEnrollmentId', label: 'attribute evaluation(s)' },
+    ];
+
+    if (await guardDeleteReferences(res, 'enrollment', id, referenceChecks)) {
+      return;
+    }
+
+    await Student.updateMany({ enrollmentId: id }, { $set: { enrollmentId: null } });
     await StudentEnrollment.findByIdAndDelete(id);
 
     sendResponse(res, 200, true, 'Enrollment deleted successfully.');

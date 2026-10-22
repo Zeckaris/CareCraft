@@ -3,6 +3,18 @@ import { Student } from '../../models/student.model.js'
 import mongoose, { Types } from 'mongoose'
 import { StudentEnrollment } from '../../models/studentEnrollment.model.js'
 import { Observation } from '../../models/observation.model.js'
+import { Attendance } from '../../models/attendance.model.js'
+import { AssessmentScore } from '../../models/assessment/assessmentScore.model.js'
+import { AttributeEvaluation } from '../../models/attributeEvaluation.model.js'
+import { StudentBadge } from '../../models/studentBadge.model.js'
+import { ActionPlan } from '../../models/actionPlan.model.js'
+import { Report } from '../../models/report.model.js'
+import { FlaggedIssue } from '../../models/flaggedIssue.model.js'
+import { ChatRoom } from '../../models/chatRoom.model.js'
+import { Notification } from '../../models/notification.model.js'
+import { InviteToken } from '../../models/inviteToken.model.js'
+import { BadgeAwardSuppression } from '../../models/badgeAwardSuppression.model.js'
+import { guardDeleteReferences, ReferenceCheck } from '../../utils/referenceGuard.util.js'
 import { sendResponse } from '../../utils/sendResponse.util.js' 
 import { logAudit } from '../../utils/auditLogger.util.js'
 import { AuthRequest } from '../../middlewares/auth.middleware.js'
@@ -282,16 +294,28 @@ export const deleteStudent = async (req: AuthRequest, res: Response): Promise<vo
       return
     }
 
-    const observationCount = await Observation.countDocuments({ studentId: id })
-    if (observationCount > 0) {
-      sendResponse(
-        res,
-        400,
-        false,
-        `Cannot delete student: ${observationCount} observation(s) reference them. Remove those first.`
-      )
+    const referenceChecks: ReferenceCheck[] = [
+      { model: StudentEnrollment, field: 'studentId', label: 'enrollment(s)' },
+      { model: Attendance, field: 'studentId', label: 'attendance record(s)' },
+      { model: AssessmentScore, field: 'studentId', label: 'assessment score(s)' },
+      { model: AttributeEvaluation, field: 'studentId', label: 'attribute evaluation(s)' },
+      { model: Observation, field: 'studentId', label: 'observation(s)' },
+      { model: StudentBadge, field: 'studentId', label: 'student badge(s)' },
+      { model: ActionPlan, field: 'studentId', label: 'action plan(s)' },
+      { model: Report, field: 'studentId', label: 'report(s)' },
+      { model: FlaggedIssue, field: 'studentId', label: 'flagged issue(s)' },
+      { model: ChatRoom, field: 'studentId', label: 'chat room(s)' },
+    ]
+
+    if (await guardDeleteReferences(res, 'student', id, referenceChecks, { person: true })) {
       return
     }
+
+    await Promise.all([
+      Notification.deleteMany({ studentId: id }),
+      InviteToken.deleteMany({ createdFor: id }),
+      BadgeAwardSuppression.deleteMany({ studentId: id }),
+    ])
 
     const deletedStudent = await Student.findByIdAndDelete(id)
     if (!deletedStudent) {
