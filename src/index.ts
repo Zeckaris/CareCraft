@@ -50,12 +50,24 @@ const rootDir = path.join(import.meta.dirname, '..');
 
 const app = express();
 
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'http://localhost:5175',
-  process.env.FRONTEND_URL || 'https://care-craft.onrender.com',
-];
+const normalizeOrigin = (origin: string): string =>
+  origin.trim().replace(/\/+$/, '');
+
+const parseAllowedOrigins = (value: string | undefined): string[] =>
+  (value ?? '')
+    .split(',')
+    .map(normalizeOrigin)
+    .filter((origin) => origin.length > 0);
+
+const allowedOrigins = Array.from(
+  new Set([
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:5175',
+    process.env.FRONTEND_URL || 'https://care-craft.onrender.com',
+    ...parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
+  ].map(normalizeOrigin))
+);
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
