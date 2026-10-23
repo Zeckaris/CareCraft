@@ -84,7 +84,11 @@ scheduleSchema.index({ schoolYear: 1, createdAt: -1 })
 // the generation job reports as `DRAFT_CONFLICT` rather than corrupting state.
 scheduleSchema.index(
   { schoolYear: 1 },
-  { unique: true, partialFilterExpression: { status: 'draft' } }
+  {
+    unique: true,
+    partialFilterExpression: { status: 'draft' },
+    name: 'schoolYear_1_draft_unique',
+  }
 )
 
 // At most one published schedule per school year. Publishing archives the
@@ -92,7 +96,11 @@ scheduleSchema.index(
 // is written (mirroring the draft-uniqueness flow above).
 scheduleSchema.index(
   { schoolYear: 1 },
-  { unique: true, partialFilterExpression: { status: 'published' } }
+  {
+    unique: true,
+    partialFilterExpression: { status: 'published' },
+    name: 'schoolYear_1_published_unique',
+  }
 )
 
 export const Schedule = model<ISchedule>('Schedule', scheduleSchema)
