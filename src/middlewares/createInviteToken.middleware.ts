@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { InviteToken } from '../models/inviteToken.model.js';
 import { sendResponse } from '../utils/sendResponse.util.js';
+import { getSafeErrorDetails } from '../utils/safeError.util.js';
 
 export const createInviteTokenMiddleware = async (req: Request, res: Response, next: NextFunction) => {
   const { role, studentId, tokenId } = req.body;
@@ -33,6 +34,7 @@ export const createInviteTokenMiddleware = async (req: Request, res: Response, n
     (req as any).inviteToken = newToken;
     next();
   } catch (error) {
-    sendResponse(res, 500, false, 'OTP creation failed.', null, error);
+    console.error('Invite token creation failed:', getSafeErrorDetails(error));
+    sendResponse(res, 500, false, 'OTP creation failed.');
   }
 };
