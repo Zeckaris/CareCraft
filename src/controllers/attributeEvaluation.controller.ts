@@ -25,9 +25,10 @@ async function buildStudentConstraint(req: AuthRequest): Promise<any> {
   if (['admin', 'coordinator'].includes(user.role)) return {}
 
   if (user.role === 'parent') {
-    const myStudent = await Student.findOne({ parentId: user.id }).select('_id').lean()
-    if (!myStudent) return { studentId: new mongoose.Types.ObjectId() }
-    return { studentId: myStudent._id }
+    const myStudents = await Student.find({ parentId: user.id })
+      .select('_id')
+      .lean()
+    return { studentId: { $in: myStudents.map((student) => student._id) } }
   }
 
   if (user.role === 'teacher') {
@@ -128,6 +129,11 @@ export const getAllAttributeEvaluations = async (req: AuthRequest, res: Response
       return;
     }
     filter.studentEnrollmentId = enrollmentId;
+  }
+
+  // Never let a query filter override the caller's role scope.
+  if (Object.keys(constraint).length > 0) {
+    filter.$and = [...(filter.$and ?? []), constraint];
   }
 
   try {

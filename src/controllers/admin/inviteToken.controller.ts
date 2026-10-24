@@ -3,6 +3,7 @@ import { InviteToken } from '../../models/inviteToken.model.js';
 import jwt from 'jsonwebtoken';
 import { sendInviteEmail, validateEmail } from '../../utils/emailVerification.util.js';
 import { sendResponse } from '../../utils/sendResponse.util.js'
+import { getSafeErrorDetails } from '../../utils/safeError.util.js';
 
 const JWT_SECRET = process.env.JWT_SECRET_KEY || 'defaultsecret';
 
@@ -48,7 +49,8 @@ export const sendInvite = async (req: Request, res: Response): Promise<void> => 
       tokenId: tokenRecord._id
     });
   } catch (error) {
-    sendResponse(res, 500, false, 'Failed to send invite.', null, error);
+    console.error('Failed to send invite:', getSafeErrorDetails(error));
+    sendResponse(res, 500, false, 'Failed to send invite.');
     return;
   }
 };

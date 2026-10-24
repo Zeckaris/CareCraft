@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import SibApiV3Sdk from 'sib-api-v3-sdk';
+import { getSafeErrorDetails } from './safeError.util.js';
 
 export const verificationCodes: Map<string, { code: string; expiresAt: Date }> = new Map();
 export const mfaLoginCodes: Map<string, { code: string; expiresAt: Date }> = new Map();
@@ -60,7 +61,7 @@ export const sendMfaLoginCode = async (email: string): Promise<boolean> => {
     });
     return true;
   } catch (error) {
-    console.error('MFA login code email error:', error);
+    console.error('MFA login code email error:', getSafeErrorDetails(error));
     mfaLoginCodes.delete(email);
     return false;
   }
@@ -112,7 +113,7 @@ export const sendInviteToken = async (req: Request, res: Response, next: any) =>
     await sendInviteEmail(targetEmail, req.body.token, req.body.role);
     next();
   } catch (error) {
-    console.error('Invite email error:', error);
+    console.error('Invite email error:', getSafeErrorDetails(error));
     res.status(500).json({ message: 'Email failed' });
   }
 };

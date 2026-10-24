@@ -16,6 +16,7 @@ import {
 } from '../../utils/emailVerification.util.js'
 import crypto from 'crypto';
 import { sendResponse } from '../../utils/sendResponse.util.js';
+import { getSafeErrorDetails } from '../../utils/safeError.util.js';
 import SibApiV3Sdk from 'sib-api-v3-sdk';
 
 
@@ -68,7 +69,7 @@ export const sendVerification = async (req: Request, res: Response) => {
     });
     sendResponse(res, 200, true, 'Verification code sent! Check your inbox.');
   } catch (error) {
-    console.error('Brevo email error:', error);
+    console.error('Brevo email error:', getSafeErrorDetails(error));
     verificationCodes.delete(email);
     sendResponse(res, 500, false, 'Failed to send verification email.');
   }
